@@ -5,7 +5,7 @@
  *
  * Authors:
  *
- *     dmex    2020-2023
+ *     dmex    2020-2024
  *
  */
 
@@ -70,14 +70,38 @@ VOID EtEnumerateNamedPipeDirectory(
         HANDLE pipeHandle;
         INT lvItemIndex;
 
-        status = PhOpenFile(
-            &pipeHandle,
-            &pipeName->sr,
-            FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+        NTSTATUS status;
+        UNICODE_STRING fileName;
+        OBJECT_ATTRIBUTES objectAttributes;
+        IO_STATUS_BLOCK ioStatusBlock;
+        SECURITY_QUALITY_OF_SERVICE pipeSecurityQos =
+        {
+            sizeof(SECURITY_QUALITY_OF_SERVICE),
+            SecurityAnonymous,
+            SECURITY_STATIC_TRACKING,
+            FALSE
+        };
+
+        if (!PhStringRefToUnicodeString(&pipeName->sr, &fileName))
+            continue;
+
+        InitializeObjectAttributes(
+            &objectAttributes,
+            &fileName,
+            OBJ_CASE_INSENSITIVE,
             pipeDirectoryHandle,
-            FILE_SHARE_READ | FILE_SHARE_WRITE,
-            FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT,
             NULL
+            );
+
+        objectAttributes.SecurityQualityOfService = &pipeSecurityQos;
+
+        status = NtOpenFile(
+            &pipeHandle,
+            FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+            &objectAttributes,
+            &ioStatusBlock,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT
             );
 
         PhPrintUInt32(value, ++count);
@@ -380,7 +404,7 @@ VOID EtEnumerateNamedPipeHandles(
             continue;
         }
 
-        if (NT_SUCCESS(KphEnumerateProcessHandles2(processHandle, &handles)))
+        if (NT_SUCCESS(KsiEnumerateProcessHandles(processHandle, &handles)))
         {
             for (ULONG i = 0; i < handles->HandleCount; i++)
             {
@@ -455,7 +479,7 @@ INT_PTR CALLBACK EtPipeEnumDlgProc(
     {
     case WM_INITDIALOG:
         {
-            context->UseKph = KphLevel() >= KphLevelMed;
+            context->UseKph = KsiLevel() >= KphLevelMed;
             context->ListViewWndHandle = GetDlgItem(hwndDlg, IDC_PIPELIST);
 
             PhSetApplicationWindowIcon(hwndDlg);

@@ -208,8 +208,7 @@ SIZE_T InterlockedExchangeIfGreaterSizeT(
 
     for (;;)
     {
-        expected = *Target;
-        MemoryBarrier();
+        expected = ReadSizeTAcquire(Target);
 
         if (Value <= expected)
         {
@@ -235,7 +234,18 @@ ProbeForWrite(pointer, sizeof(type), TYPE_ALIGNMENT(type))
 _Pragma("warning(suppress : 6001)")                                           \
 ProbeForRead(pointer, sizeof(type), TYPE_ALIGNMENT(type))
 
+#define ProbeOutputBytes(pointer, size)                                       \
+_Pragma("warning(suppress : 6001)")                                           \
+ProbeForWrite(pointer, size, TYPE_ALIGNMENT(BYTE))
+
+#define ProbeInputBytes(pointer, size)                                        \
+_Pragma("warning(suppress : 6001)")                                           \
+ProbeForRead(pointer, size, TYPE_ALIGNMENT(BYTE))
+
 #define C_2sTo4(x) ((unsigned int)(signed short)(x))
+
+#define RebasePtr(pointer, oldBase, newBase)                                  \
+Add2Ptr(newBase, PtrOffset(oldBase, pointer))
 
 #define RebaseUnicodeString(string, oldBase, newBase)                         \
 if ((string)->Buffer)                                                         \
@@ -254,6 +264,25 @@ typedef struct _KPH_FILE_VERSION
     USHORT BuildNumber;
     USHORT Revision;
 } KPH_FILE_VERSION, *PKPH_FILE_VERSION;
+
+typedef struct _KPH_MEMORY_REGION
+{
+    PVOID Start;
+    PVOID End;
+} KPH_MEMORY_REGION, *PKPH_MEMORY_REGION;
+
+_Must_inspect_result_
+FORCEINLINE
+BOOLEAN KphIsValidMemoryRegion(
+    _In_ PKPH_MEMORY_REGION Region,
+    _In_ PVOID Start,
+    _In_ PVOID End
+    )
+{
+    return ((Region->Start <= Region->End) &&
+            (Region->Start >= Start) &&
+            (Region->End <= End));
+}
 
 // main
 
@@ -495,6 +524,9 @@ extern PPS_SET_CREATE_PROCESS_NOTIFY_ROUTINE_EX2 KphDynPsSetCreateProcessNotifyR
 extern PMM_PROTECT_DRIVER_SECTION KphDynMmProtectDriverSection;
 extern PPS_GET_PROCESS_SEQUENCE_NUMBER KphDynPsGetProcessSequenceNumber;
 extern PPS_GET_PROCESS_START_KEY KphDynPsGetProcessStartKey;
+extern PCI_VALIDATE_FILE_OBJECT KphDynCiValidateFileObject;
+extern PCI_FREE_POLICY_INFO KphDynCiFreePolicyInfo;
+extern PLXP_THREAD_GET_CURRENT KphDynLxpThreadGetCurrent;
 
 _IRQL_requires_max_(PASSIVE_LEVEL)
 VOID KphDynamicImport(
@@ -560,13 +592,6 @@ typedef struct _KPH_DYN
     ULONG MmControlAreaLock;
     ULONG EpSectionObject;
 
-    PCI_FREE_POLICY_INFO CiFreePolicyInfo;
-    PCI_VERIFY_HASH_IN_CATALOG CiVerifyHashInCatalog;
-    PCI_CHECK_SIGNED_FILE CiCheckSignedFile;
-    PCI_VERIFY_HASH_IN_CATALOG_EX CiVerifyHashInCatalogEx;
-    PCI_CHECK_SIGNED_FILE_EX CiCheckSignedFileEx;
-    PLXP_THREAD_GET_CURRENT LxpThreadGetCurrent;
-
     BCRYPT_KEY_HANDLE SessionTokenPublicKeyHandle;
 } KPH_DYN, *PKPH_DYN;
 
@@ -611,7 +636,7 @@ VOID KphCleanupDynData(
 _Must_inspect_result_
 PVOID KphObpDecodeObject(
     _In_ PKPH_DYN Dyn,
-    _In_ PVOID Object
+    _In_ PHANDLE_TABLE_ENTRY HandleTableEntry
     );
 
 _Must_inspect_result_
@@ -872,22 +897,33 @@ NTSTATUS KphQueryInformationThread(
 
 // util
 
+#pragma deprecated(memcmp)
+#pragma deprecated(RtlCompareMemory)
+#pragma deprecated(RtlEqualMemory)
+
 _Must_inspect_result_
+FORCEINLINE
 INT KphCompareMemory(
     _In_reads_bytes_(Length) PVOID Buffer1,
     _In_reads_bytes_(Length) PVOID Buffer2,
     _In_ SIZE_T Length
-    );
-#pragma deprecated(memcmp)
-#pragma deprecated(RtlCompareMemory)
+    )
+{
+#pragma warning(suppress: 4995) // suppress deprecation warning
+    return memcmp(Buffer1, Buffer2, Length);
+}
 
 _Must_inspect_result_
+FORCEINLINE
 BOOLEAN KphEqualMemory(
     _In_reads_bytes_(Length) PVOID Buffer1,
     _In_reads_bytes_(Length) PVOID Buffer2,
     _In_ SIZE_T Length
-    );
-#pragma deprecated(RtlEqualMemory)
+    )
+{
+#pragma warning(suppress: 4995) // suppress deprecation warning
+    return (memcmp(Buffer1, Buffer2, Length) == 0);
+}
 
 _Must_inspect_result_
 PVOID KphSearchMemory(
@@ -952,6 +988,13 @@ VOID KphReleaseRWLock(
     _Inout_ _Requires_lock_held_(*_Curr_) _Releases_lock_(*_Curr_) PKPH_RWLOCK Lock
     );
 
+_IRQL_requires_max_(DISPATCH_LEVEL)
+_Must_inspect_result_
+BOOLEAN KphIsSameFile(
+    _In_ PFILE_OBJECT FirstFileObject,
+    _In_ PFILE_OBJECT SecondFileObject
+    );
+
 typedef struct _KPH_REFERENCE
 {
     volatile LONG Count;
@@ -1013,6 +1056,7 @@ NTSTATUS KphQueryRegistryULong(
     _Out_ PULONG Value
     );
 
+#define KPH_MAP_DATA     0x00000000ul
 #define KPH_MAP_IMAGE    0x00000001ul
 
 _IRQL_always_function_max_(PASSIVE_LEVEL)
@@ -1052,13 +1096,6 @@ _IRQL_requires_max_(PASSIVE_LEVEL)
 BOOLEAN KphSinglePrivilegeCheck(
     _In_ LUID PrivilegeValue,
     _In_ KPROCESSOR_MODE AccessMode
-    );
-
-_IRQL_requires_max_(PASSIVE_LEVEL)
-_Must_inspect_result_
-NTSTATUS KphProcessIsLsass(
-    _In_ PEPROCESS Process,
-    _Out_ PBOOLEAN IsLsass
     );
 
 _IRQL_requires_max_(PASSIVE_LEVEL)
@@ -1186,23 +1223,47 @@ PVOID KphGetThreadSubProcessTag(
     _In_ PETHREAD Thread
     );
 
+_IRQL_requires_max_(PASSIVE_LEVEL)
+_Must_inspect_result_
+NTSTATUS KphGetSigningLevel(
+    _In_ PFILE_OBJECT FileObject,
+    _Out_ PSE_SIGNING_LEVEL SigningLevel
+    );
+
+typedef union _KPH_IMAGE_NT_HEADERS
+{
+    PIMAGE_NT_HEADERS Headers;
+    PIMAGE_NT_HEADERS32 Headers32;
+    PIMAGE_NT_HEADERS64 Headers64;
+} KPH_IMAGE_NT_HEADERS, *PKPH_IMAGE_NT_HEADERS;
+
+_IRQL_requires_max_(APC_LEVEL)
+_Must_inspect_result_
+NTSTATUS KphImageNtHeader(
+    _In_ PVOID Base,
+    _In_ ULONG64 Size,
+    _Out_ PKPH_IMAGE_NT_HEADERS Headers
+    );
+
+// lsa
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+_Must_inspect_result_
+NTSTATUS KphProcessIsLsass(
+    _In_ PEPROCESS Process,
+    _Out_ PBOOLEAN IsLsass
+    );
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+VOID KphInvalidateLsass(
+    _In_ HANDLE ProcessId
+    );
+
 // vm
 
 _IRQL_requires_max_(PASSIVE_LEVEL)
 _Must_inspect_result_
-NTSTATUS KphCopyVirtualMemory(
-    _In_ PEPROCESS FromProcess,
-    _In_ PVOID FromAddress,
-    _In_ PEPROCESS ToProcess,
-    _Out_writes_bytes_(BufferLength) PVOID ToAddress,
-    _In_ SIZE_T BufferLength,
-    _In_ KPROCESSOR_MODE AccessMode,
-    _Out_ PSIZE_T ReturnLength
-    );
-
-_IRQL_requires_max_(PASSIVE_LEVEL)
-_Must_inspect_result_
-NTSTATUS KphReadVirtualMemoryUnsafe(
+NTSTATUS KphReadVirtualMemory(
     _In_opt_ HANDLE ProcessHandle,
     _In_ PVOID BaseAddress,
     _Out_writes_bytes_(BufferSize) PVOID Buffer,
@@ -1243,17 +1304,6 @@ NTSTATUS KphQueryVirtualMemory(
     );
 
 // hash
-
-#define KPH_AUTHENTICODE_HASH_SHA1   0
-#define KPH_AUTHENTICODE_HASH_SHA256 1
-#define KPH_AUTHENTICODE_HASH_MAX    2
-
-typedef struct _KPH_AUTHENTICODE_INFORMATION
-{
-    KPH_HASH_INFORMATION HashInfo[KPH_AUTHENTICODE_HASH_MAX];
-    ULONG SignatureLength;
-    PBYTE Signature;
-} KPH_AUTHENTICODE_INFORMATION, *PKPH_AUTHENTICODE_INFORMATION;
 
 _IRQL_requires_max_(PASSIVE_LEVEL)
 _Must_inspect_result_
@@ -1296,59 +1346,10 @@ NTSTATUS KphQueryHashInformationFile(
 
 _IRQL_requires_max_(PASSIVE_LEVEL)
 _Must_inspect_result_
-NTSTATUS KphGetAuthenticodeInformation(
-    _In_ HANDLE FileHandle,
-    _Out_allocatesMem_ PKPH_AUTHENTICODE_INFORMATION Information
-    );
-
-_IRQL_requires_max_(PASSIVE_LEVEL)
-VOID KphFreeAuthenticodeInformation(
-    _In_freesMem_ PKPH_AUTHENTICODE_INFORMATION Information
-    );
-
-// sign
-
-typedef struct _KPH_SIGNING_INFORMATION
-{
-    PKPH_DYN Dyn;
-    KPH_AUTHENTICODE_INFORMATION AuthenticodeInfo;
-    MINCRYPT_POLICY_INFO PolicyInfo;
-    LARGE_INTEGER SigningTime;
-    MINCRYPT_POLICY_INFO TimeStampPolicyInfo;
-    UNICODE_STRING CatalogName;
-} KPH_SIGNING_INFORMATION, *PKPH_SIGNING_INFORMATION;
-
-_IRQL_requires_max_(PASSIVE_LEVEL)
-_Must_inspect_result_
-NTSTATUS KphInitializeSigning(
-    VOID
-    );
-
-_IRQL_requires_max_(PASSIVE_LEVEL)
-VOID KphCleanupSigning(
-    VOID
-    );
-
-_IRQL_requires_max_(APC_LEVEL)
-VOID KphReferenceSigningInfrastructure(
-    VOID
-    );
-
-_IRQL_requires_max_(APC_LEVEL)
-VOID KphDereferenceSigningInfrastructure(
-    VOID
-    );
-
-_IRQL_requires_max_(PASSIVE_LEVEL)
-_Must_inspect_result_
-NTSTATUS KphGetSigningInformation(
-    _In_ PCUNICODE_STRING FileName,
-    _Out_allocatesMem_ PKPH_SIGNING_INFORMATION Information
-    );
-
-_IRQL_requires_max_(PASSIVE_LEVEL)
-VOID KphFreeSigningInformation(
-    _In_freesMem_ PKPH_SIGNING_INFORMATION Information
+NTSTATUS KphQueryHashInformationFileObject(
+    _In_ PFILE_OBJECT FileObject,
+    _Inout_ PKPH_HASH_INFORMATION HashInformation,
+    _In_ ULONG HashInformationLength
     );
 
 // kphobject
@@ -1360,6 +1361,8 @@ typedef struct _KPH_OBJECT_HEADER
 
     QUAD Body;
 } KPH_OBJECT_HEADER, *PKPH_OBJECT_HEADER;
+
+C_ASSERT((FIELD_OFFSET(KPH_OBJECT_HEADER, Body) % MEMORY_ALLOCATION_ALIGNMENT) == 0);
 
 #define KphObjectToObjectHeader(x) ((PKPH_OBJECT_HEADER)CONTAINING_RECORD((PCHAR)Object, KPH_OBJECT_HEADER, Body))
 #define KphObjectHeaderToObject(x) ((PVOID)&((PKPH_OBJECT_HEADER)(x))->Body)
@@ -1591,11 +1594,10 @@ typedef struct _KPH_PROCESS_CONTEXT
             ULONG VerifiedProcess : 1;
             ULONG SecurelyCreated : 1;
             ULONG Protected : 1;
-            ULONG IsLsass : 1;
             ULONG IsWow64 : 1;
             ULONG IsSubsystemProcess : 1;
             ULONG AllocatedImageName : 1;
-            ULONG Reserved : 23;
+            ULONG Reserved : 24;
         };
     };
 
@@ -1638,7 +1640,6 @@ extern PKPH_OBJECT_TYPE KphProcessContextType;
 
 typedef enum _KPH_PROCESS_CONTEXT_INFORMATION_CLASS
 {
-    KphProcessContextIsLsass,      // q: BOOLEAN
     KphProcessContextWSLProcessId, // q: ULONG
 } KPH_PROCESS_CONTEXT_INFORMATION_CLASS, *PKPH_PROCESS_CONTEXT_INFORMATION_CLASS;
 
@@ -1940,6 +1941,17 @@ NTSTATUS KphStripProtectedProcessMasks(
     _In_ KPROCESSOR_MODE AccessMode
     );
 
+// imgcoherency
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+_Must_inspect_result_
+NTSTATUS KphCheckImageCoherency(
+    _In_ PVOID ImageBase,
+    _In_ SIZE_T ImageSize,
+    _In_ PVOID DataBase,
+    _In_ SIZE_T DataSize
+    );
+
 // verify
 
 _IRQL_requires_max_(PASSIVE_LEVEL)
@@ -1976,8 +1988,16 @@ NTSTATUS KphVerifyBuffer(
 
 _IRQL_requires_max_(PASSIVE_LEVEL)
 _Must_inspect_result_
+NTSTATUS KphVerifyFileObject(
+    _In_ PFILE_OBJECT FileObject,
+    _In_opt_ PCUNICODE_STRING FileName
+    );
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+_Must_inspect_result_
 NTSTATUS KphVerifyFile(
-    _In_ PCUNICODE_STRING FileName
+    _In_ PCUNICODE_STRING FileName,
+    _In_opt_ PFILE_OBJECT FileObject
     );
 
 _IRQL_requires_max_(PASSIVE_LEVEL)
@@ -2387,7 +2407,6 @@ NTSTATUS KphHttpBuildRequest(
     _Inout_ PULONG Length
     );
 
-// download
 // download
 
 typedef PVOID KPH_DOWNLOAD_HANDLE;

@@ -1154,7 +1154,7 @@ VOID PhMwpOnCommand(
         break;
     case ID_TOOLS_THREADSTACKS:
         {
-            PhShowThreadStacksDialog();
+            PhShowThreadStacksDialog(WindowHandle);
         }
         break;
     case ID_TOOLS_CREATESERVICE:
@@ -1275,6 +1275,30 @@ VOID PhMwpOnCommand(
                 {
                     PhCreateProcessIgnoreIfeoDebugger(PhGetString(perfmonFileName), L" /res");
                 }
+            }
+        }
+        break;
+    case ID_TOOLS_SHUTDOWNWSLPROCESSES:
+        {
+            NTSTATUS status;
+            PPH_STRING perfmonFileName;
+
+            perfmonFileName = PH_AUTO(PhGetSystemDirectoryWin32Z(L"\\wsl.exe"));
+
+            status = PhShellExecuteEx(
+                WindowHandle,
+                PhGetString(perfmonFileName),
+                L" --shutdown",
+                NULL,
+                SW_SHOW,
+                0,
+                0,
+                NULL
+                );
+
+            if (!NT_SUCCESS(status))
+            {
+                PhShowStatus(WindowHandle, L"Unable to shutdown WSL instances.", status, 0);
             }
         }
         break;
@@ -1730,6 +1754,18 @@ VOID PhMwpOnCommand(
             }
         }
         break;
+    case ID_MISCELLANEOUS_FLUSHHEAPS:
+        {
+            PPH_PROCESS_ITEM* processes;
+            ULONG numberOfProcesses;
+
+            PhGetSelectedProcessItems(&processes, &numberOfProcesses);
+            PhReferenceObjects(processes, numberOfProcesses);
+            PhUiFlushHeapProcesses(WindowHandle, processes, numberOfProcesses);
+            PhDereferenceObjects(processes, numberOfProcesses);
+            PhFree(processes);
+        }
+        break;
     case ID_PRIORITY_REALTIME:
     case ID_PRIORITY_HIGH:
     case ID_PRIORITY_ABOVENORMAL:
@@ -1774,6 +1810,17 @@ VOID PhMwpOnCommand(
             }
         }
         break;
+    case ID_MISCELLANEOUS_EXECUTIONREQUIRED:
+        {
+            PPH_PROCESS_ITEM processItem = PhGetSelectedProcessItem();
+
+            if (processItem)
+            {
+                PhReferenceObject(processItem);
+                PhUiSetExecutionRequiredProcess(WindowHandle, processItem);
+                PhDereferenceObject(processItem);
+            }
+        }
     case ID_WINDOW_BRINGTOFRONT:
         {
             if (IsWindow(PhMwpSelectedProcessWindowHandle))
@@ -1882,6 +1929,10 @@ VOID PhMwpOnCommand(
                     SetFocus(PhMwpProcessTreeNewHandle);
                     PhSelectAndEnsureVisibleProcessNode(processNode);
                 }
+                else
+                {
+                    PhShowStatus(WindowHandle, L"The process does not exist.", STATUS_INVALID_CID, 0);
+                }
             }
         }
         break;
@@ -1974,14 +2025,14 @@ VOID PhMwpOnCommand(
                     }
                     else
                     {
-                        PhShowError(WindowHandle, L"%s", L"The service does not exist.");
+                        PhShowStatus(WindowHandle, L"The service does not exist.", STATUS_OBJECT_NAME_NOT_FOUND, 0);
                     }
 
                     NtClose(keyHandle);
                 }
                 else
                 {
-                    PhShowError(WindowHandle, L"%s", L"The service does not exist.");
+                    PhShowStatus(WindowHandle, L"The service does not exist.", STATUS_OBJECT_NAME_NOT_FOUND, 0);
                 }
             }
         }
@@ -2042,6 +2093,10 @@ VOID PhMwpOnCommand(
                     PhMwpSelectPage(PhMwpProcessesPage->Index);
                     SetFocus(PhMwpProcessTreeNewHandle);
                     PhSelectAndEnsureVisibleProcessNode(processNode);
+                }
+                else
+                {
+                    PhShowStatus(WindowHandle, L"The process does not exist.", STATUS_INVALID_CID, 0);
                 }
             }
         }
@@ -2825,6 +2880,8 @@ PPH_EMENU PhpCreateToolsMenu(
     PhInsertEMenuItem(ToolsMenu, PhCreateEMenuSeparator(), ULONG_MAX);
     PhInsertEMenuItem(ToolsMenu, PhCreateEMenuItem(0, ID_TOOLS_STARTTASKMANAGER, L"Start &Task Manager", NULL, NULL), ULONG_MAX);
     PhInsertEMenuItem(ToolsMenu, PhCreateEMenuItem(0, ID_TOOLS_STARTRESOURCEMONITOR, L"Start &Resource Monitor", NULL, NULL), ULONG_MAX);
+    PhInsertEMenuItem(ToolsMenu, PhCreateEMenuSeparator(), ULONG_MAX);
+    PhInsertEMenuItem(ToolsMenu, PhCreateEMenuItem(0, ID_TOOLS_SHUTDOWNWSLPROCESSES, L"T&erminate WSL processes", NULL, NULL), ULONG_MAX);
     PhInsertEMenuItem(ToolsMenu, PhCreateEMenuSeparator(), ULONG_MAX);
 
     menuItem = PhCreateEMenuItem(0, 0, L"&Permissions", NULL, NULL);
@@ -3849,7 +3906,7 @@ BOOLEAN PhHandleMiniProcessMenuItem(
             }
             else
             {
-                PhShowError(PhMainWndHandle, L"%s", L"The process does not exist.");
+                PhShowStatus(PhMainWndHandle, L"The process does not exist.", STATUS_INVALID_CID, 0);
             }
         }
         break;
@@ -3870,7 +3927,7 @@ BOOLEAN PhHandleMiniProcessMenuItem(
             }
             else
             {
-                PhShowError(PhMainWndHandle, L"%s", L"The process does not exist.");
+                PhShowStatus(PhMainWndHandle, L"The process does not exist.", STATUS_INVALID_CID, 0);
             }
         }
         break;
@@ -3889,7 +3946,7 @@ BOOLEAN PhHandleMiniProcessMenuItem(
             }
             else
             {
-                PhShowError(PhMainWndHandle, L"%s", L"The process does not exist.");
+                PhShowStatus(PhMainWndHandle, L"The process does not exist.", STATUS_INVALID_CID, 0);
             }
         }
         break;
@@ -4104,24 +4161,21 @@ BOOLEAN PhpShowToastNotification(
     )
 {
     static PH_INITONCE initOnce = PH_INITONCE_INIT;
+    static PH_STRINGREF iconAppName = PH_STRINGREF_INIT(L"System Informer");
     static PPH_STRING iconFileName = NULL;
-    BOOLEAN result;
+    HRESULT result;
     PPH_STRING toastXml;
+    PH_FORMAT format[7];
 
     if (!PhGetIntegerSetting(L"ToastNotifyEnabled"))
         return FALSE;
 
     if (PhBeginInitOnce(&initOnce))
     {
-        PPH_STRING applicationDir;
+        iconFileName = PhGetApplicationDirectoryFileNameZ(L"icon.png", FALSE);
 
-        if (applicationDir = PhGetApplicationDirectoryWin32())
-        {
-            iconFileName = PhConcatStringRefZ(&applicationDir->sr, L"icon.png");
-            if (!PhDoesFileExistWin32(PhGetString(iconFileName)))
-                PhClearReference(&iconFileName);
-            PhDereferenceObject(applicationDir);
-        }
+        if (!PhDoesFileExistWin32(PhGetString(iconFileName)))
+            PhClearReference(&iconFileName);
 
         PhEndInitOnce(&initOnce);
     }
@@ -4132,32 +4186,41 @@ BOOLEAN PhpShowToastNotification(
     if (PhInitializeToastRuntime() != S_OK)
         return FALSE;
 
-    toastXml = PhFormatString(
-        L"<toast>\r\n"
-        L"    <visual>\r\n"
-        L"       <binding template=\"ToastImageAndText02\">\r\n"
-        L"            <image id=\"1\" src=\"%s\" alt=\"red graphic\"/>\r\n"
-        L"            <text id=\"1\">%ls</text>\r\n"
-        L"            <text id=\"2\">%ls</text>\r\n"
-        L"        </binding>\r\n"
-        L"    </visual>\r\n"
-        L"</toast>",
-        PhGetString(iconFileName),
-        Title,
-        Text
-        );
+    //toastXml = PhFormatString(
+    //    L"<toast>\r\n"
+    //    L"    <visual>\r\n"
+    //    L"       <binding template=\"ToastImageAndText02\">\r\n"
+    //    L"            <image id=\"1\" src=\"%s\" alt=\"red graphic\"/>\r\n"
+    //    L"            <text id=\"1\">%ls</text>\r\n"
+    //    L"            <text id=\"2\">%ls</text>\r\n"
+    //    L"        </binding>\r\n"
+    //    L"    </visual>\r\n"
+    //    L"</toast>",
+    //    PhGetString(iconFileName),
+    //    Title,
+    //    Text
+    //    );
 
-    result = SUCCEEDED(PhShowToast(
-        L"System Informer",
-        PhGetString(toastXml),
+    PhInitFormatS(&format[0], L"<toast><visual><binding template=\"ToastImageAndText02\"><image id=\"1\" src=\"");
+    PhInitFormatSR(&format[1], iconFileName->sr);
+    PhInitFormatS(&format[2], L"\" alt=\"red graphic\"/><text id=\"1\">");
+    PhInitFormatS(&format[3], Title);
+    PhInitFormatS(&format[4], L"</text><text id=\"2\">");
+    PhInitFormatS(&format[5], Text);
+    PhInitFormatS(&format[6], L"</text></binding></visual></toast>");
+    toastXml = PhFormat(format, RTL_NUMBER_OF(format), 0);
+
+    result = PhShowToastStringRef(
+        &iconAppName,
+        &toastXml->sr,
         Timeout * 1000,
         PhpToastCallback,
         NULL
-        ));
+        );
 
     PhDereferenceObject(toastXml);
 
-    return result;
+    return HR_SUCCESS(result);
 }
 
 VOID PhShowIconNotification(
@@ -4211,10 +4274,13 @@ VOID PhMwpClearLastNotificationDetails(
     VOID
     )
 {
-    if (PhMwpLastNotificationType &
-        (PH_NOTIFY_SERVICE_CREATE | PH_NOTIFY_SERVICE_DELETE | PH_NOTIFY_SERVICE_START | PH_NOTIFY_SERVICE_STOP))
+    switch (PhMwpLastNotificationType)
     {
+    case PH_NOTIFY_SERVICE_CREATE:
+    case PH_NOTIFY_SERVICE_START:
+    case PH_NOTIFY_SERVICE_STOP:
         PhClearReference(&PhMwpLastNotificationDetails.ServiceName);
+        break;
     }
 
     PhMwpLastNotificationType = 0;

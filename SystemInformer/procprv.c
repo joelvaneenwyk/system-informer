@@ -199,7 +199,7 @@ PH_UINT64_DELTA PhIoReadDelta;
 PH_UINT64_DELTA PhIoWriteDelta;
 PH_UINT64_DELTA PhIoOtherDelta;
 
-static BOOLEAN PhProcessStatisticsInitialized = FALSE;
+BOOLEAN PhProcessStatisticsInitialized = FALSE;
 static ULONG PhTimeSequenceNumber = 0;
 static PH_CIRCULAR_BUFFER_ULONG PhTimeHistory;
 
@@ -726,7 +726,7 @@ VOID PhpProcessQueryStage1(
             {
                 // Some command lines (e.g. from taskeng.exe) have nulls in them. Since Windows
                 // can't display them, we'll replace them with spaces.
-                for (ULONG i = 0; i < (ULONG)commandLine->Length / sizeof(WCHAR); i++)
+                for (SIZE_T i = 0; i < commandLine->Length / sizeof(WCHAR); i++)
                 {
                     if (commandLine->Buffer[i] == UNICODE_NULL)
                         commandLine->Buffer[i] = L' ';
@@ -759,7 +759,7 @@ VOID PhpProcessQueryStage1(
     // Job
     if (processHandleLimited)
     {
-        if (KphLevel() >= KphLevelMed)
+        if (KsiLevel() >= KphLevelMed)
         {
             HANDLE jobHandle = NULL;
 
@@ -1105,6 +1105,7 @@ VOID PhpFillProcessItem(
     if (PH_IS_REAL_PROCESS_ID(ProcessItem->ProcessId))
     {
         PhPrintUInt32(ProcessItem->ProcessIdString, HandleToUlong(ProcessItem->ProcessId));
+        PhPrintUInt32IX(ProcessItem->ProcessIdHexString, HandleToUlong(ProcessItem->ProcessId));
         //PhPrintUInt32(ProcessItem->ParentProcessIdString, HandleToUlong(ProcessItem->ParentProcessId));
         //PhPrintUInt32(ProcessItem->SessionIdString, ProcessItem->SessionId);
     }
@@ -1340,7 +1341,7 @@ VOID PhpFillProcessItem(
     // WSL
     if (WindowsVersion >= WINDOWS_10_22H2 && ProcessItem->QueryHandle)
     {
-        if (ProcessItem->IsSubsystemProcess && KphLevel() >= KphLevelMed)
+        if (ProcessItem->IsSubsystemProcess && KsiLevel() >= KphLevelMed)
         {
             ULONG lxssProcessId;
 
@@ -1360,14 +1361,14 @@ VOID PhpFillProcessItem(
 
     // On Windows 8.1 and above, processes without threads are reflected processes
     // which will not terminate if we have a handle open. (wj32)
-    if (Process->NumberOfThreads == 0 && ProcessItem->QueryHandle)
+    if (Process->UserTime.QuadPart + Process->KernelTime.QuadPart == 0 && Process->NumberOfThreads == 0 && ProcessItem->QueryHandle)
     {
         NtClose(ProcessItem->QueryHandle);
         ProcessItem->QueryHandle = NULL;
     }
 }
 
-FORCEINLINE VOID PhpUpdateDynamicInfoProcessItem(
+VOID PhpUpdateDynamicInfoProcessItem(
     _Inout_ PPH_PROCESS_ITEM ProcessItem,
     _In_ PSYSTEM_PROCESS_INFORMATION Process
     )
@@ -1381,6 +1382,16 @@ FORCEINLINE VOID PhpUpdateDynamicInfoProcessItem(
         if (NT_SUCCESS(PhGetProcessPriority(ProcessItem->QueryHandle, &priorityClass)))
         {
             ProcessItem->PriorityClass = priorityClass;
+        }
+
+        if (WindowsVersion >= WINDOWS_11_24H2)
+        {
+            PROCESS_NETWORK_COUNTERS networkCounters;
+
+            if (NT_SUCCESS(PhGetProcesNetworkIoCounters(ProcessItem->QueryHandle, &networkCounters)))
+            {
+                ProcessItem->NetworkCounters = networkCounters;
+            }
         }
     }
     else
@@ -1934,7 +1945,7 @@ VOID PhpGetProcessThreadInformation(
     }
 
     // HACK: Minimal/Reflected processes don't have threads. (dmex)
-    if (Process->NumberOfThreads == 0)
+    if (Process->UserTime.QuadPart + Process->KernelTime.QuadPart == 0 && Process->NumberOfThreads == 0)
     {
         isSuspended = FALSE;
         isPartiallySuspended = FALSE;
@@ -2358,8 +2369,8 @@ VOID PhProcessProviderUpdate(
             PhpAddProcessRecord(processRecord);
             processItem->Record = processRecord;
 
-            PhpGetProcessThreadInformation(process, &isSuspended, &isPartiallySuspended, &contextSwitches, &processorQueueLength);
             PhpUpdateDynamicInfoProcessItem(processItem, process);
+            PhpGetProcessThreadInformation(process, &isSuspended, &isPartiallySuspended, &contextSwitches, &processorQueueLength);
             PhTotalCpuQueueLength += processorQueueLength;
 
             // Initialize the deltas.
@@ -2425,8 +2436,8 @@ VOID PhProcessProviderUpdate(
             FLOAT kernelCpuUsage;
             FLOAT userCpuUsage;
 
-            PhpGetProcessThreadInformation(process, &isSuspended, &isPartiallySuspended, &contextSwitches, &readyThreads);
             PhpUpdateDynamicInfoProcessItem(processItem, process);
+            PhpGetProcessThreadInformation(process, &isSuspended, &isPartiallySuspended, &contextSwitches, &readyThreads);
             PhpFillProcessItemExtension(processItem, process);
             PhTotalCpuQueueLength += readyThreads;
 
@@ -2709,7 +2720,7 @@ VOID PhProcessProviderUpdate(
                 BOOLEAN isInSignificantJob = FALSE;
                 BOOLEAN isInJob = FALSE;
 
-                if (KphLevel() >= KphLevelMed)
+                if (KsiLevel() >= KphLevelMed)
                 {
                     HANDLE jobHandle = NULL;
 
@@ -3664,15 +3675,13 @@ PPH_IMAGELIST_ITEM PhImageListExtractIcon(
             );
     }
 
-    newentry = PhCreateObjectZero(sizeof(PH_IMAGELIST_ITEM), PhImageListItemType);
+    newentry = PhCreateObject(sizeof(PH_IMAGELIST_ITEM), PhImageListItemType);
     newentry->FileName = PhReferenceObject(FileName);
 
     if (largeIcon && smallIcon)
     {
         newentry->LargeIconIndex = PhImageListAddIcon(PhProcessLargeImageList, largeIcon);
         newentry->SmallIconIndex = PhImageListAddIcon(PhProcessSmallImageList, smallIcon);
-        DestroyIcon(smallIcon);
-        DestroyIcon(largeIcon);
     }
     else
     {
@@ -3684,6 +3693,11 @@ PPH_IMAGELIST_ITEM PhImageListExtractIcon(
     PhAddEntryHashtable(PhImageListCacheHashtable, &newentry);
 
     PhReleaseQueuedLockExclusive(&PhImageListCacheHashtableLock);
+
+    if (smallIcon)
+        DestroyIcon(smallIcon);
+    if (largeIcon)
+        DestroyIcon(smallIcon);
 
     return newentry;
 }

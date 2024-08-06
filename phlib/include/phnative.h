@@ -6,7 +6,7 @@
  * Authors:
  *
  *     wj32    2009-2016
- *     dmex    2017-2023
+ *     dmex    2017-2024
  *
  */
 
@@ -24,6 +24,7 @@ EXTERN_C_START
 
 #define PhNtPathSeperatorString ((PH_STRINGREF)PH_STRINGREF_INIT(L"\\")) // OBJ_NAME_PATH_SEPARATOR // RtlNtPathSeperatorString
 #define PhNtDosDevicesPrefix ((PH_STRINGREF)PH_STRINGREF_INIT(L"\\??\\")) // RtlDosDevicesPrefix
+#define PhWin32ExtendedPathPrefix ((PH_STRINGREF)PH_STRINGREF_INIT(L"\\\\?\\")) // extended-length paths, disable path normalization
 
 // General object-related function types
 
@@ -1632,7 +1633,7 @@ PHLIBAPI
 NTSTATUS
 NTAPI
 PhGetKernelFileNameEx(
-    _Out_ PPH_STRING* FileName,
+    _Out_opt_ PPH_STRING* FileName,
     _Out_ PVOID* ImageBase,
     _Out_ ULONG* ImageSize
     );
@@ -2067,15 +2068,17 @@ PhGetFileName(
 
 // "X:\"
 #define PATH_IS_WIN32_DRIVE_PREFIX(s) ( \
-    (s)->Length >= 2 && \
-    (s)->Buffer[0] >= L'A' && \
-    (s)->Buffer[0] <= L'Z' && \
+    (s)->Length >= (3 * sizeof(WCHAR)) && \
+    (((s)->Buffer[0] >= L'A' && \
+      (s)->Buffer[0] <= L'Z') || \
+     ((s)->Buffer[0] >= L'a' && \
+      (s)->Buffer[0] <= L'z')) && \
     (s)->Buffer[1] == L':' && \
     (s)->Buffer[2] == OBJ_NAME_PATH_SEPARATOR)
 
 // "\??\" or "\\?\" or "\\.\"
 #define PATH_IS_WIN32_DOSDEVICES_PREFIX(s) ( \
-    (s)->Length >= 3 && \
+    (s)->Length >= (4 * sizeof(WCHAR)) && \
     (s)->Buffer[0] == '\\' && \
     ((s)->Buffer[1] == '?' || (s)->Buffer[1] == '\\') && \
     (s)->Buffer[2] == '?' || (s)->Buffer[2] == '.'&& \
@@ -2083,8 +2086,8 @@ PhGetFileName(
 
 // "." or ".."
 #define PATH_IS_WIN32_RELATIVE_PREFIX(s) ( \
-    (s)->Length == 2 && (s)->Buffer[0] == L'.' || \
-    (s)->Length == 4 && (s)->Buffer[0] == L'.' && (s)->Buffer[1] == L'.')
+    (s)->Length == (1 * sizeof(WCHAR)) && (s)->Buffer[0] == L'.' || \
+    (s)->Length == (2 * sizeof(WCHAR)) && (s)->Buffer[0] == L'.' && (s)->Buffer[1] == L'.')
 
 PHLIBAPI
 PPH_STRING
@@ -2759,6 +2762,15 @@ PhGetNamedPipeServerProcessId(
 PHLIBAPI
 NTSTATUS
 NTAPI
+PhEnumDirectoryNamedPipe(
+    _In_opt_ PUNICODE_STRING SearchPattern,
+    _In_ PPH_ENUM_DIRECTORY_FILE Callback,
+    _In_opt_ PVOID Context
+    );
+
+PHLIBAPI
+NTSTATUS
+NTAPI
 PhGetThreadName(
     _In_ HANDLE ThreadHandle,
     _Out_ PPH_STRING *ThreadName
@@ -3211,6 +3223,27 @@ PhThawProcess(
 PHLIBAPI
 BOOLEAN
 NTAPI
+PhIsProcessExecutionRequired(
+    _In_ HANDLE ProcessId
+    );
+
+PHLIBAPI
+NTSTATUS
+NTAPI
+PhProcessExecutionRequiredEnable(
+    _In_ HANDLE ProcessId
+    );
+
+PHLIBAPI
+NTSTATUS
+NTAPI
+PhProcessExecutionRequiredDisable(
+    _In_ HANDLE ProcessId
+    );
+
+PHLIBAPI
+BOOLEAN
+NTAPI
 PhIsKnownDllFileName(
     _In_ PPH_STRING FileName
     );
@@ -3351,6 +3384,16 @@ PhSetSystemFileCacheSize(
     _In_ SIZE_T MinimumFileCacheSize,
     _In_ SIZE_T MaximumFileCacheSize,
     _In_ ULONG Flags
+    );
+
+PHLIBAPI
+NTSTATUS
+NTAPI
+PhCreateEvent(
+    _Out_ PHANDLE EventHandle,
+    _In_ ACCESS_MASK DesiredAccess,
+    _In_ EVENT_TYPE EventType,
+    _In_ BOOLEAN InitialState
     );
 
 PHLIBAPI
@@ -3542,6 +3585,18 @@ PhIsEcCode(
     _Out_ PBOOLEAN IsEcCode
     );
 #endif
+
+PHLIBAPI
+HANDLE
+NTAPI
+PhGetStdHandle(
+    _In_ ULONG StdHandle
+    );
+
+NTSTATUS PhFlushProcessHeapsRemote(
+    _In_ HANDLE ProcessHandle,
+    _In_opt_ PLARGE_INTEGER Timeout
+    );
 
 EXTERN_C_END
 

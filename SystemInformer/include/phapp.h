@@ -311,6 +311,10 @@ PPH_STRING PhGetDiagnosticsString(
     VOID
     );
 
+PPH_STRING PhGetApplicationVersionString(
+    _In_ BOOLEAN LinkToCommit
+    );
+
 // affinity
 
 VOID PhShowProcessAffinityDialog(
@@ -870,7 +874,7 @@ VOID PhShowThreadStackDialog(
 // thrdstks
 
 VOID PhShowThreadStacksDialog(
-    VOID
+    _In_ HWND ParentWindowHandle
     );
 
 // tokprp

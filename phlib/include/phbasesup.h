@@ -2428,10 +2428,32 @@ PhFinalStringBuilderString(
 PHLIBAPI
 VOID
 NTAPI
+PhAppendStringBuilderEx(
+    _Inout_ PPH_STRING_BUILDER StringBuilder,
+    _In_opt_ PWCHAR String,
+    _In_ SIZE_T Length
+    );
+
+/**
+ * Appends a string to the end of a string builder string.
+ *
+ * \param StringBuilder A string builder object.
+ * \param String The string to append.
+ */
+FORCEINLINE
+VOID
+NTAPI
 PhAppendStringBuilder(
     _Inout_ PPH_STRING_BUILDER StringBuilder,
     _In_ PPH_STRINGREF String
-    );
+    )
+{
+    PhAppendStringBuilderEx(
+        StringBuilder,
+        String->Buffer,
+        String->Length
+        );
+}
 
 /**
  * Appends a string to the end of a string builder string.
@@ -2452,15 +2474,6 @@ PhAppendStringBuilder2(
     PhInitializeStringRef(&string, String);
     PhAppendStringBuilder(StringBuilder, &string);
 }
-
-PHLIBAPI
-VOID
-NTAPI
-PhAppendStringBuilderEx(
-    _Inout_ PPH_STRING_BUILDER StringBuilder,
-    _In_opt_ PWCHAR String,
-    _In_ SIZE_T Length
-    );
 
 PHLIBAPI
 VOID
@@ -3203,8 +3216,10 @@ typedef struct _PH_HASHTABLE_ENTRY
      */
     ULONG Next;
     /** The beginning of user data. */
-    QUAD Body;
+    QUAD_PTR Body;
 } PH_HASHTABLE_ENTRY, *PPH_HASHTABLE_ENTRY;
+
+C_ASSERT((FIELD_OFFSET(PH_HASHTABLE_ENTRY, Body) % MEMORY_ALLOCATION_ALIGNMENT) == 0);
 
 /**
  * A comparison function used by a hashtable.
@@ -3529,6 +3544,8 @@ typedef struct _PH_FREE_LIST_ENTRY
     SLIST_ENTRY ListEntry;
     QUAD_PTR Body;
 } PH_FREE_LIST_ENTRY, *PPH_FREE_LIST_ENTRY;
+
+C_ASSERT((FIELD_OFFSET(PH_FREE_LIST_ENTRY, Body) % MEMORY_ALLOCATION_ALIGNMENT) == 0);
 
 #ifdef _WIN64
 C_ASSERT(FIELD_OFFSET(PH_FREE_LIST_ENTRY, ListEntry) == 0x0);
@@ -3918,9 +3935,31 @@ PhTlsGetValue(
 PHLIBAPI
 NTSTATUS
 NTAPI
+PhTlsGetValueEx(
+    _In_ ULONG Index,
+    _Out_ PVOID* Value
+    );
+
+PHLIBAPI
+NTSTATUS
+NTAPI
 PhTlsSetValue(
     _In_ ULONG Index,
     _In_opt_ PVOID Value
+    );
+
+PHLIBAPI
+ULONG
+NTAPI
+PhGetLastError(
+    VOID
+    );
+
+PHLIBAPI
+VOID
+NTAPI
+PhSetLastError(
+    _In_ ULONG ErrorValue
     );
 
 // Auto-dereference convenience functions
@@ -4473,7 +4512,7 @@ PhGetLastWin32ErrorAsNtStatus(
     VOID
     )
 {
-    return PhDosErrorToNtStatus(GetLastError());
+    return PhDosErrorToNtStatus(PhGetLastError());
 }
 
 // Generic tree definitions

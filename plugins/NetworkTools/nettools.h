@@ -40,11 +40,12 @@
 #define SETTING_NAME_WHOIS_IPV6_SUPPORT (PLUGIN_NAME L".WhoisProtocalSupport")
 #define SETTING_NAME_EXTENDED_TCP_STATS (PLUGIN_NAME L".EnableExtendedTcpStats")
 #define SETTING_NAME_GEOLITE_API_KEY (PLUGIN_NAME L".MaxMindApiKey")
+#define SETTING_NAME_GEOLITE_API_ID (PLUGIN_NAME L".MaxMindApiId")
 #define SETTING_NAME_GEOLITE_DB_TYPE (PLUGIN_NAME L".MaxMindType")
 
 extern PPH_PLUGIN PluginInstance;
 extern BOOLEAN GeoDbInitialized;
-extern BOOLEAN GeoDbDatabaseType;
+extern ULONG GeoLiteDatabaseType;
 extern PH_STRINGREF GeoDbCityFileName;
 extern PH_STRINGREF GeoDbCountryFileName;
 extern PPH_STRING SearchboxText;
@@ -60,13 +61,12 @@ extern PPH_STRING SearchboxText;
 #define BITS_IN_ONE_BYTE 8
 #define NDIS_UNIT_OF_MEASUREMENT 100
 
-// The ICMPV6_ECHO_REPLY struct doesn't have a field to access the reply data,
-// so copy the struct and add an additional Data field.
+// The ICMPV6_ECHO_REPLY struct doesn't have a field to access the data. (dmex)
 typedef struct _ICMPV6_ECHO_REPLY2
 {
     IPV6_ADDRESS_EX Address;
     ULONG Status;
-    unsigned int RoundTripTime;
+    ULONG RoundTripTime;
     BYTE Data[ANYSIZE_ARRAY]; // custom
 } ICMPV6_ECHO_REPLY2, *PICMPV6_ECHO_REPLY2;
 
@@ -216,8 +216,8 @@ VOID ShowTracertWindowFromAddress(
 // options.c
 
 INT_PTR CALLBACK OptionsDlgProc(
-    _In_ HWND hwndDlg,
-    _In_ UINT uMsg,
+    _In_ HWND WindowHandle,
+    _In_ UINT WindowMessage,
     _In_ WPARAM wParam,
     _In_ LPARAM lParam
     );
@@ -241,8 +241,8 @@ typedef struct _NETWORK_EXTENSION
         };
     };
 
-    PH_STRINGREF LocalServiceName;
-    PH_STRINGREF RemoteServiceName;
+    PPH_STRINGREF LocalServiceName;
+    PPH_STRINGREF RemoteServiceName;
 
     PPH_STRING RemoteCountryName;
     INT CountryIconIndex;
@@ -251,10 +251,12 @@ typedef struct _NETWORK_EXTENSION
     ULONG64 NumberOfBytesIn;
     ULONG64 NumberOfLostPackets;
     ULONG SampleRtt;
+    ULONG VarianceRtt;
 
     PPH_STRING BytesIn;
     PPH_STRING BytesOut;
-    PPH_STRING PacketLossText;
+    PPH_STRING LossText;
+    PPH_STRING JitterText;
     PPH_STRING LatencyText;
 } NETWORK_EXTENSION, *PNETWORK_EXTENSION;
 
@@ -267,6 +269,7 @@ typedef enum _NETWORK_COLUMN_ID
     NETWORK_COLUMN_ID_BYTES_IN,
     NETWORK_COLUMN_ID_BYTES_OUT,
     NETWORK_COLUMN_ID_PACKETLOSS,
+    NETWORK_COLUMN_ID_JITTER,
     NETWORK_COLUMN_ID_LATENCY
 } NETWORK_COLUMN_ID;
 
@@ -352,6 +355,10 @@ VOID ShowDbUpdateFailedDialog(
     _In_ PNETWORK_GEODB_UPDATE_CONTEXT Context
     );
 
+VOID ShowDbInvalidSettingsDialog(
+    _In_ PNETWORK_GEODB_UPDATE_CONTEXT Context
+    );
+
 // ports.c
 typedef struct _RESOLVED_PORT
 {
@@ -363,7 +370,7 @@ extern CONST RESOLVED_PORT ResolvedPortsTable[6265];
 
 BOOLEAN LookupPortServiceName(
     _In_ ULONG Port,
-    _Out_ PPH_STRINGREF ServiceName
+    _Out_ PPH_STRINGREF* ServiceName
     );
 
 #endif

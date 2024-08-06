@@ -6,7 +6,7 @@
  * Authors:
  *
  *     wj32    2010-2013
- *     dmex    2018-2023
+ *     dmex    2018-2024
  *
  */
 
@@ -60,6 +60,7 @@ typedef enum _PHP_HANDLE_GENERAL_INDEX
     PH_HANDLE_GENERAL_INDEX_FILEMODE,
     PH_HANDLE_GENERAL_INDEX_FILEPOSITION,
     PH_HANDLE_GENERAL_INDEX_FILESIZE,
+    PH_HANDLE_GENERAL_INDEX_FILEPRIORITY,
     PH_HANDLE_GENERAL_INDEX_FILEDRIVER,
     PH_HANDLE_GENERAL_INDEX_FILEDRIVERIMAGE,
 
@@ -147,7 +148,7 @@ static NTSTATUS PhpDuplicateHandleFromProcess(
         NtClose(processHandle);
     }
 
-    if (!NT_SUCCESS(status) && KphLevel() >= KphLevelMax)
+    if (!NT_SUCCESS(status) && KsiLevel() >= KphLevelMax)
     {
         if (NT_SUCCESS(status = PhOpenProcess(
             &processHandle,
@@ -430,7 +431,7 @@ VOID PhpUpdateHandleGeneralListViewGroups(
                 );
         }
 
-        if (KphLevel() >= KphLevelMed)
+        if (KsiLevel() >= KphLevelMed)
         {
             Context->ListViewRowCache[PH_HANDLE_GENERAL_INDEX_ALPCCONNECTION] = PhAddListViewGroupItem(
                 Context->ListViewHandle,
@@ -507,8 +508,15 @@ VOID PhpUpdateHandleGeneralListViewGroups(
             L"Size",
             NULL
             );
+        Context->ListViewRowCache[PH_HANDLE_GENERAL_INDEX_FILEPRIORITY] = PhAddListViewGroupItem(
+            Context->ListViewHandle,
+            PH_HANDLE_GENERAL_CATEGORY_FILE,
+            PH_HANDLE_GENERAL_INDEX_FILEPRIORITY,
+            L"Priority",
+            NULL
+            );
 
-        if (KphLevel() >= KphLevelMed)
+        if (KsiLevel() >= KphLevelMed)
         {
             Context->ListViewRowCache[PH_HANDLE_GENERAL_INDEX_FILEDRIVER] = PhAddListViewGroupItem(
                 Context->ListViewHandle,
@@ -654,7 +662,6 @@ VOID PhpUpdateHandleGeneral(
     HANDLE processHandle;
     PPH_ACCESS_ENTRY accessEntries;
     ULONG numberOfAccessEntries;
-    OBJECT_BASIC_INFORMATION basicInfo;
     WCHAR string[PH_INT64_STR_LEN_1];
 
     PhSetListViewSubItem(Context->ListViewHandle, Context->ListViewRowCache[PH_HANDLE_GENERAL_INDEX_NAME], 1, PhGetStringOrEmpty(Context->HandleItem->BestObjectName));
@@ -707,10 +714,12 @@ VOID PhpUpdateHandleGeneral(
 
     if (NT_SUCCESS(PhOpenProcess(
         &processHandle,
-        (KphLevel() >= KphLevelMed ? PROCESS_QUERY_LIMITED_INFORMATION : PROCESS_DUP_HANDLE),
+        (KsiLevel() >= KphLevelMed ? PROCESS_QUERY_LIMITED_INFORMATION : PROCESS_DUP_HANDLE),
         Context->ProcessId
         )))
     {
+        OBJECT_BASIC_INFORMATION basicInfo;
+
         if (NT_SUCCESS(PhGetHandleInformation(
             processHandle,
             Context->HandleItem->Handle,
@@ -744,9 +753,8 @@ VOID PhpUpdateHandleGeneral(
     else if (PhEqualString2(Context->HandleItem->TypeName, L"ALPC Port", TRUE))
     {
         NTSTATUS status;
-        HANDLE processHandle = NULL;
 
-        if (KphLevel() >= KphLevelMed && NT_SUCCESS(PhOpenProcess(
+        if (KsiLevel() >= KphLevelMed && NT_SUCCESS(PhOpenProcess(
                 &processHandle,
                 PROCESS_QUERY_LIMITED_INFORMATION,
                 Context->ProcessId
@@ -980,72 +988,72 @@ VOID PhpUpdateHandleGeneral(
 
                 if (NT_SUCCESS(status) && alpcPortHandle)
                 {
-                    ALPC_BASIC_INFORMATION basicInfo;
+                    ALPC_BASIC_INFORMATION alpcBasicInfo;
 
                     if (NT_SUCCESS(NtAlpcQueryInformation(
                         alpcPortHandle,
                         AlpcBasicInformation,
-                        &basicInfo,
+                        &alpcBasicInfo,
                         sizeof(ALPC_BASIC_INFORMATION),
                         NULL
                         )))
                     {
-                        ULONG remainingFlags = basicInfo.Flags;
+                        ULONG remainingFlags = alpcBasicInfo.Flags;
                         PH_STRING_BUILDER stringBuilder;
 
                         PhInitializeStringBuilder(&stringBuilder, 0x100);
 
-                        if (basicInfo.Flags & ALPC_PORFLG_LPC_MODE)
+                        if (FlagOn(alpcBasicInfo.Flags, ALPC_PORFLG_LPC_MODE))
                         {
                             PhAppendStringBuilder2(&stringBuilder, L"LPC mode, ");
                             ClearFlag(remainingFlags, ALPC_PORFLG_LPC_MODE);
                         }
-                        if (basicInfo.Flags & ALPC_PORFLG_ALLOW_IMPERSONATION)
+                        if (FlagOn(alpcBasicInfo.Flags, ALPC_PORFLG_ALLOW_IMPERSONATION))
                         {
                             PhAppendStringBuilder2(&stringBuilder, L"Allow impersonation, ");
                             ClearFlag(remainingFlags, ALPC_PORFLG_ALLOW_IMPERSONATION);
                         }
-                        if (basicInfo.Flags & ALPC_PORFLG_ALLOW_LPC_REQUESTS)
+                        if (FlagOn(alpcBasicInfo.Flags, ALPC_PORFLG_ALLOW_LPC_REQUESTS))
                         {
                             PhAppendStringBuilder2(&stringBuilder, L"Allow LPC requests, ");
                             ClearFlag(remainingFlags, ALPC_PORFLG_ALLOW_LPC_REQUESTS);
                         }
-                        if (basicInfo.Flags & ALPC_PORFLG_WAITABLE_PORT)
+                        if (FlagOn(alpcBasicInfo.Flags, ALPC_PORFLG_WAITABLE_PORT))
                         {
                             PhAppendStringBuilder2(&stringBuilder, L"Waitable, ");
                             ClearFlag(remainingFlags, ALPC_PORFLG_WAITABLE_PORT);
                         }
-                        if (basicInfo.Flags & ALPC_PORFLG_ALLOW_DUP_OBJECT)
+                        if (FlagOn(alpcBasicInfo.Flags, ALPC_PORFLG_ALLOW_DUP_OBJECT))
                         {
                             PhAppendStringBuilder2(&stringBuilder, L"Allow object duplication, ");
                             ClearFlag(remainingFlags, ALPC_PORFLG_ALLOW_DUP_OBJECT);
                         }
-                        if (basicInfo.Flags & ALPC_PORFLG_SYSTEM_PROCESS)
+                        if (FlagOn(alpcBasicInfo.Flags, ALPC_PORFLG_SYSTEM_PROCESS))
                         {
                             PhAppendStringBuilder2(&stringBuilder, L"System process only, ");
                             ClearFlag(remainingFlags, ALPC_PORFLG_SYSTEM_PROCESS);
                         }
-                        if (basicInfo.Flags & ALPC_PORFLG_WAKE_POLICY1)
+                        if (FlagOn(alpcBasicInfo.Flags, ALPC_PORFLG_WAKE_POLICY1))
                         {
                             PhAppendStringBuilder2(&stringBuilder, L"Wake policy (1), ");
                             ClearFlag(remainingFlags, ALPC_PORFLG_WAKE_POLICY1);
                         }
-                        if (basicInfo.Flags & ALPC_PORFLG_WAKE_POLICY2)
+                        if (FlagOn(alpcBasicInfo.Flags, ALPC_PORFLG_WAKE_POLICY2))
                         {
                             PhAppendStringBuilder2(&stringBuilder, L"Wake policy (2), ");
                             ClearFlag(remainingFlags, ALPC_PORFLG_WAKE_POLICY2);
                         }
-                        if (basicInfo.Flags & ALPC_PORFLG_WAKE_POLICY3)
+                        if (FlagOn(alpcBasicInfo.Flags, ALPC_PORFLG_WAKE_POLICY3))
                         {
                             PhAppendStringBuilder2(&stringBuilder, L"Wake policy (3), ");
                             ClearFlag(remainingFlags, ALPC_PORFLG_WAKE_POLICY3);
                         }
-                        if (basicInfo.Flags & ALPC_PORFLG_DIRECT_MESSAGE)
+                        if (FlagOn(alpcBasicInfo.Flags, ALPC_PORFLG_DIRECT_MESSAGE))
                         {
                             PhAppendStringBuilder2(&stringBuilder, L"No shared section (direct), ");
                             ClearFlag(remainingFlags, ALPC_PORFLG_DIRECT_MESSAGE);
                         }
-                        if (basicInfo.Flags & ALPC_PORFLG_ALLOW_MULTIHANDLE_ATTRIBUTE)
+                        if (FlagOn(alpcBasicInfo.Flags, ALPC_PORFLG_ALLOW_MULTIHANDLE_ATTRIBUTE))
                         {
                             PhAppendStringBuilder2(&stringBuilder, L"Allow multi-handle attributes, ");
                             ClearFlag(remainingFlags, ALPC_PORFLG_ALLOW_MULTIHANDLE_ATTRIBUTE);
@@ -1113,9 +1121,8 @@ VOID PhpUpdateHandleGeneral(
     else if (PhEqualString2(Context->HandleItem->TypeName, L"File", TRUE))
     {
         NTSTATUS status;
-        HANDLE processHandle;
 
-        if (KphLevel() >= KphLevelMed && NT_SUCCESS(PhOpenProcess(
+        if (KsiLevel() >= KphLevelMed && NT_SUCCESS(PhOpenProcess(
                 &processHandle,
                 PROCESS_QUERY_LIMITED_INFORMATION,
                 Context->ProcessId
@@ -1127,6 +1134,7 @@ VOID PhpUpdateHandleGeneral(
             FILE_MODE_INFORMATION fileModeInfo;
             FILE_STANDARD_INFORMATION fileStandardInfo;
             FILE_POSITION_INFORMATION filePositionInfo;
+            FILE_IO_PRIORITY_HINT_INFORMATION_EX priorityInfo;
             IO_STATUS_BLOCK isb;
             KPH_FILE_OBJECT_DRIVER fileObjectDriver;
 
@@ -1275,6 +1283,34 @@ VOID PhpUpdateHandleGeneral(
                 }
             }
 
+            if (NT_SUCCESS(status = PhCallKphQueryFileInformationWithTimeout(
+                processHandle,
+                Context->HandleItem->Handle,
+                FileIoPriorityHintInformation,
+                &priorityInfo,
+                sizeof(priorityInfo)
+                )))
+            {
+                switch (priorityInfo.PriorityHint)
+                {
+                case IoPriorityVeryLow:
+                    PhSetListViewSubItem(Context->ListViewHandle, Context->ListViewRowCache[PH_HANDLE_GENERAL_INDEX_FILEPRIORITY], 1, L"Very Low");
+                    break;
+                case IoPriorityLow:
+                    PhSetListViewSubItem(Context->ListViewHandle, Context->ListViewRowCache[PH_HANDLE_GENERAL_INDEX_FILEPRIORITY], 1, L"Low");
+                    break;
+                case IoPriorityNormal:
+                    PhSetListViewSubItem(Context->ListViewHandle, Context->ListViewRowCache[PH_HANDLE_GENERAL_INDEX_FILEPRIORITY], 1, L"Normal");
+                    break;
+                case IoPriorityHigh:
+                    PhSetListViewSubItem(Context->ListViewHandle, Context->ListViewRowCache[PH_HANDLE_GENERAL_INDEX_FILEPRIORITY], 1, L"High");
+                    break;
+                case IoPriorityCritical:
+                    PhSetListViewSubItem(Context->ListViewHandle, Context->ListViewRowCache[PH_HANDLE_GENERAL_INDEX_FILEPRIORITY], 1, L"Critical");
+                    break;
+                }
+            }
+
             if (NT_SUCCESS(KphQueryInformationObject(
                 processHandle,
                 Context->HandleItem->Handle,
@@ -1284,18 +1320,18 @@ VOID PhpUpdateHandleGeneral(
                 NULL
                 )))
             {
-                PPH_STRING string;
+                PPH_STRING driverName;
 
-                if (NT_SUCCESS(PhGetDriverName(fileObjectDriver.DriverHandle, &string)))
+                if (NT_SUCCESS(PhGetDriverName(fileObjectDriver.DriverHandle, &driverName)))
                 {
-                    PhSetListViewSubItem(Context->ListViewHandle, Context->ListViewRowCache[PH_HANDLE_GENERAL_INDEX_FILEDRIVER], 1, PhGetString(string));
-                    PhDereferenceObject(string);
+                    PhSetListViewSubItem(Context->ListViewHandle, Context->ListViewRowCache[PH_HANDLE_GENERAL_INDEX_FILEDRIVER], 1, PhGetString(driverName));
+                    PhDereferenceObject(driverName);
                 }
 
-                if (NT_SUCCESS(PhGetDriverImageFileName(fileObjectDriver.DriverHandle, &string)))
+                if (NT_SUCCESS(PhGetDriverImageFileName(fileObjectDriver.DriverHandle, &driverName)))
                 {
-                    PhSetListViewSubItem(Context->ListViewHandle, Context->ListViewRowCache[PH_HANDLE_GENERAL_INDEX_FILEDRIVERIMAGE], 1, PhGetString(string));
-                    PhDereferenceObject(string);
+                    PhSetListViewSubItem(Context->ListViewHandle, Context->ListViewRowCache[PH_HANDLE_GENERAL_INDEX_FILEDRIVERIMAGE], 1, PhGetString(driverName));
+                    PhDereferenceObject(driverName);
                 }
 
                 NtClose(fileObjectDriver.DriverHandle);
@@ -1318,10 +1354,53 @@ VOID PhpUpdateHandleGeneral(
                     Context->HandleItem->Handle,
                     NtCurrentProcess(),
                     &fileHandle,
-                    MAXIMUM_ALLOWED,
+                    FILE_READ_ACCESS | SYNCHRONIZE,
                     0,
                     0
                     );
+
+                if (!NT_SUCCESS(status))
+                {
+                    status = NtDuplicateObject(
+                        processHandle,
+                        Context->HandleItem->Handle,
+                        NtCurrentProcess(),
+                        &fileHandle,
+                        FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+                        0,
+                        0
+                        );
+                }
+
+                //if (!NT_SUCCESS(status))
+                //{
+                //    status = NtDuplicateObject(
+                //        processHandle,
+                //        Context->HandleItem->Handle,
+                //        NtCurrentProcess(),
+                //        &fileHandle,
+                //        MAXIMUM_ALLOWED | SYNCHRONIZE,
+                //        0,
+                //        0
+                //        );
+                //}
+
+                if (!NT_SUCCESS(status))
+                {
+                    status = NtDuplicateObject(
+                        processHandle,
+                        Context->HandleItem->Handle,
+                        NtCurrentProcess(),
+                        &fileHandle,
+                        0,
+                        0,
+                        DUPLICATE_SAME_ACCESS
+                        );
+
+                    HANDLE newhandle;
+                    PhReOpenFile(&newhandle, fileHandle, FILE_READ_ACCESS | SYNCHRONIZE, 0, 0);
+                }
+
                 NtClose(processHandle);
             }
 
@@ -1336,6 +1415,7 @@ VOID PhpUpdateHandleGeneral(
                 FILE_MODE_INFORMATION fileModeInfo;
                 FILE_STANDARD_INFORMATION fileStandardInfo;
                 FILE_POSITION_INFORMATION filePositionInfo;
+                FILE_IO_PRIORITY_HINT_INFORMATION_EX priorityInfo;
                 IO_STATUS_BLOCK isb;
 
                 if (NT_SUCCESS(NtQueryVolumeInformationFile(
@@ -1479,6 +1559,34 @@ VOID PhpUpdateHandleGeneral(
                     }
                 }
 
+
+                if (NT_SUCCESS(status = PhCallNtQueryFileInformationWithTimeout(
+                    fileHandle,
+                    FileIoPriorityHintInformation,
+                    &priorityInfo,
+                    sizeof(priorityInfo)
+                    )))
+                {
+                    switch (priorityInfo.PriorityHint)
+                    {
+                    case IoPriorityVeryLow:
+                        PhSetListViewSubItem(Context->ListViewHandle, Context->ListViewRowCache[PH_HANDLE_GENERAL_INDEX_FILEPRIORITY], 1, L"Very Low");
+                        break;
+                    case IoPriorityLow:
+                        PhSetListViewSubItem(Context->ListViewHandle, Context->ListViewRowCache[PH_HANDLE_GENERAL_INDEX_FILEPRIORITY], 1, L"Low");
+                        break;
+                    case IoPriorityNormal:
+                        PhSetListViewSubItem(Context->ListViewHandle, Context->ListViewRowCache[PH_HANDLE_GENERAL_INDEX_FILEPRIORITY], 1, L"Normal");
+                        break;
+                    case IoPriorityHigh:
+                        PhSetListViewSubItem(Context->ListViewHandle, Context->ListViewRowCache[PH_HANDLE_GENERAL_INDEX_FILEPRIORITY], 1, L"High");
+                        break;
+                    case IoPriorityCritical:
+                        PhSetListViewSubItem(Context->ListViewHandle, Context->ListViewRowCache[PH_HANDLE_GENERAL_INDEX_FILEPRIORITY], 1, L"Critical");
+                        break;
+                    }
+                }
+
                 NtClose(fileHandle);
             }
         }
@@ -1486,11 +1594,10 @@ VOID PhpUpdateHandleGeneral(
     else if (PhEqualString2(Context->HandleItem->TypeName, L"Section", TRUE))
     {
         NTSTATUS status;
-        HANDLE processHandle;
         SECTION_BASIC_INFORMATION basicInfo;
         PPH_STRING fileName = NULL;
 
-        if (KphLevel() >= KphLevelMed && NT_SUCCESS(PhOpenProcess(
+        if (KsiLevel() >= KphLevelMed && NT_SUCCESS(PhOpenProcess(
                 &processHandle,
                 PROCESS_QUERY_LIMITED_INFORMATION,
                 Context->ProcessId
@@ -1600,16 +1707,16 @@ VOID PhpUpdateHandleGeneral(
             PWSTR sectionType = L"Unknown";
             PPH_STRING sectionSize = NULL;
 
-            if (basicInfo.AllocationAttributes & SEC_COMMIT)
+            if (FlagOn(basicInfo.AllocationAttributes, SEC_COMMIT))
                 sectionType = L"Commit";
-            else if (basicInfo.AllocationAttributes & SEC_FILE)
+            else if (FlagOn(basicInfo.AllocationAttributes, SEC_FILE))
                 sectionType = L"File";
-            else if (basicInfo.AllocationAttributes & SEC_IMAGE)
+            else if (FlagOn(basicInfo.AllocationAttributes, SEC_IMAGE))
                 sectionType = L"Image";
-            else if (basicInfo.AllocationAttributes & SEC_RESERVE)
+            else if (FlagOn(basicInfo.AllocationAttributes, SEC_RESERVE))
                 sectionType = L"Reserve";
 
-            sectionSize = PhaFormatSize(basicInfo.MaximumSize.QuadPart, -1);
+            sectionSize = PhaFormatSize(basicInfo.MaximumSize.QuadPart, ULONG_MAX);
 
             if (fileName)
             {
@@ -1617,8 +1724,7 @@ VOID PhpUpdateHandleGeneral(
 
                 if (newFileName = PhResolveDevicePrefix(&fileName->sr))
                 {
-                    PhDereferenceObject(fileName);
-                    fileName = newFileName;
+                    PhMoveReference(&fileName, newFileName);
                 }
             }
 
@@ -1630,7 +1736,6 @@ VOID PhpUpdateHandleGeneral(
     else if (PhEqualString2(Context->HandleItem->TypeName, L"Mutant", TRUE))
     {
         NTSTATUS status;
-        HANDLE processHandle;
         HANDLE mutantHandle = NULL;
 
         if (NT_SUCCESS(status = PhOpenProcess(
@@ -1680,14 +1785,13 @@ VOID PhpUpdateHandleGeneral(
     else if (PhEqualString2(Context->HandleItem->TypeName, L"Process", TRUE))
     {
         NTSTATUS status;
-        HANDLE processHandle;
         NTSTATUS exitStatus = STATUS_PENDING;
         PPH_STRING fileName = NULL;
         PROCESS_BASIC_INFORMATION basicInfo;
         KERNEL_USER_TIMES times;
         BOOLEAN haveTimes = FALSE;
 
-        if (KphLevel() >= KphLevelMed && NT_SUCCESS(PhOpenProcess(
+        if (KsiLevel() >= KphLevelMed && NT_SUCCESS(PhOpenProcess(
                 &processHandle,
                 PROCESS_QUERY_LIMITED_INFORMATION,
                 Context->ProcessId
@@ -1827,14 +1931,14 @@ VOID PhpUpdateHandleGeneral(
 
         if (exitStatus != STATUS_PENDING)
         {
-            PPH_STRING status;
+            PPH_STRING message;
             PPH_STRING exitcode;
 
-            status = PhGetStatusMessage(exitStatus, 0);
+            message = PhGetStatusMessage(exitStatus, 0);
             exitcode = PhFormatString(
                 L"0x%x (%s)",
                 exitStatus,
-                PhGetStringOrDefault(status, L"Unknown")
+                PhGetStringOrDefault(message, L"Unknown")
                 );
 
             PhSetListViewSubItem(
@@ -1845,19 +1949,18 @@ VOID PhpUpdateHandleGeneral(
                 );
 
             PhDereferenceObject(exitcode);
-            PhClearReference(&status);
+            PhClearReference(&message);
         }
     }
     else if (PhEqualString2(Context->HandleItem->TypeName, L"Thread", TRUE))
     {
         NTSTATUS status;
-        HANDLE processHandle;
         BOOLEAN isTerminated = FALSE;
         PPH_STRING name = NULL;
         KERNEL_USER_TIMES times;
         NTSTATUS exitStatus = STATUS_PENDING;
 
-        if (KphLevel() >= KphLevelMed && NT_SUCCESS(PhOpenProcess(
+        if (KsiLevel() >= KphLevelMed && NT_SUCCESS(PhOpenProcess(
                 &processHandle,
                 PROCESS_QUERY_LIMITED_INFORMATION,
                 Context->ProcessId
@@ -1992,14 +2095,14 @@ VOID PhpUpdateHandleGeneral(
 
         if (isTerminated)
         {
-            PPH_STRING status;
+            PPH_STRING message;
             PPH_STRING exitcode;
 
-            status = PhGetStatusMessage(exitStatus, 0);
+            message = PhGetStatusMessage(exitStatus, 0);
             exitcode = PhFormatString(
                 L"0x%x (%s)",
                 exitStatus,
-                PhGetStringOrDefault(status, L"Unknown")
+                PhGetStringOrDefault(message, L"Unknown")
                 );
 
             PhSetListViewSubItem(
@@ -2010,7 +2113,7 @@ VOID PhpUpdateHandleGeneral(
                 );
 
             PhDereferenceObject(exitcode);
-            PhClearReference(&status);
+            PhClearReference(&message);
         }
 
         if (NT_SUCCESS(status))

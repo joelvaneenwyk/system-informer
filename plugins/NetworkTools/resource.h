@@ -271,20 +271,24 @@
 #define IDC_PING_LAYOUT                 1021
 #define IDC_BAD_HASH                    1022
 #define IDC_STATUS                      1023
-#define IDC_GEOIP                       1028
 #define IDC_LIST_TRACERT                1030
 #define IDC_REFRESH                     1031
 #define IDC_ENABLE_EXTENDED_TCP         1032
+#define IDC_APIKEYIDBTN                 1033
 #define IDC_HELPLINK                    1036
 #define IDC_KEYTEXT                     1037
+#define IDC_GEOIDTEXT                   1038
+#define IDC_APIKEYBTN                   1039
+#define IDC_GEODBCOMBO                  1040
+#define IDC_GEOCONF                     1041
 
 // Next default values for new objects
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        111
+#define _APS_NEXT_RESOURCE_VALUE        112
 #define _APS_NEXT_COMMAND_VALUE         40006
-#define _APS_NEXT_CONTROL_VALUE         1038
+#define _APS_NEXT_CONTROL_VALUE         1042
 #define _APS_NEXT_SYMED_VALUE           104
 #endif
 #endif

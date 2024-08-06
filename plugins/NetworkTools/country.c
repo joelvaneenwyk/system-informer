@@ -5,7 +5,7 @@
  *
  * Authors:
  *
- *     dmex    2016-2023
+ *     dmex    2016-2024
  *
  */
 
@@ -14,9 +14,9 @@
 
 BOOLEAN GeoDbInitialized = FALSE;
 BOOLEAN GeoDbExpired = FALSE;
-BOOLEAN GeoDbDatabaseType = FALSE;
+ULONG GeoLiteDatabaseType = 0;
 HIMAGELIST GeoImageList = NULL;
-MMDB_s GeoDbCountry = { 0 };
+MMDB_s GeoDbInstance = { 0 };
 PH_STRINGREF GeoDbCityFileName = PH_STRINGREF_INIT(L"GeoLite2-City.mmdb");
 PH_STRINGREF GeoDbCountryFileName = PH_STRINGREF_INIT(L"GeoLite2-Country.mmdb");
 PPH_HASHTABLE NetworkToolsGeoDbCacheHashtable = NULL;
@@ -25,8 +25,8 @@ PH_QUEUED_LOCK NetworkToolsGeoDbCacheHashtableLock = PH_QUEUED_LOCK_INIT;
 typedef struct _GEODB_IPADDR_CACHE_ENTRY
 {
     PH_IP_ADDRESS RemoteAddress;
-    ULONG CountryCode;
     PPH_STRING CountryName;
+    ULONG CountryCode;
 } GEODB_IPADDR_CACHE_ENTRY, *PGEODB_IPADDR_CACHE_ENTRY;
 
 typedef struct _GEODB_GEONAME_CACHE_TABLE
@@ -183,14 +183,19 @@ BOOLEAN NetToolsGeoLiteInitialized(
     {
         PPH_STRING dbpath;
 
-        if (GeoDbDatabaseType)
-            dbpath = PhGetApplicationDataFileName(&GeoDbCityFileName, TRUE);
-        else
-            dbpath = PhGetApplicationDataFileName(&GeoDbCountryFileName, TRUE);
-
-        if (dbpath)
+        switch (GeoLiteDatabaseType)
         {
-            if (MMDB_open(&dbpath->sr, MMDB_MODE_MMAP, &GeoDbCountry) == MMDB_SUCCESS)
+        default:
+            dbpath = PhGetApplicationDataFileName(&GeoDbCountryFileName, TRUE);
+            break;
+        case 1:
+            dbpath = PhGetApplicationDataFileName(&GeoDbCityFileName, TRUE);
+            break;
+        }
+
+        if (!PhIsNullOrEmptyString(dbpath))
+        {
+            if (MMDB_open(&dbpath->sr, MMDB_MODE_MMAP, &GeoDbInstance) == MMDB_SUCCESS)
             {
                 LARGE_INTEGER systemTime;
                 ULONG secondsSince1970;
@@ -201,7 +206,7 @@ BOOLEAN NetToolsGeoLiteInitialized(
                 PhTimeToSecondsSince1970(&systemTime, &secondsSince1970);
 
                 // Check if the Geoip database is older than 6 months (182 days = approx. 6 months).
-                if ((secondsSince1970 - GeoDbCountry.metadata.build_epoch) > (182 * 24 * 60 * 60))
+                if ((secondsSince1970 - GeoDbInstance.metadata.build_epoch) > (182 * 24 * 60 * 60))
                 {
                     GeoDbExpired = TRUE;
                 }
@@ -239,7 +244,7 @@ VOID FreeGeoLiteDb(
 
     if (GeoDbInitialized)
     {
-        MMDB_close(&GeoDbCountry);
+        MMDB_close(&GeoDbInstance);
     }
 }
 
@@ -394,8 +399,11 @@ BOOLEAN LookupCountryCodeFromMmdb(
     MMDB_lookup_result_s mmdb_result;
     INT mmdb_error = 0;
 
-    if (!NetToolsGeoLiteInitialized())
-        return FALSE;
+    if (!GeoDbInitialized)
+    {
+        if (!NetToolsGeoLiteInitialized())
+            return FALSE;
+    }
 
     if (RemoteAddress.Type == PH_IPV4_NETWORK_TYPE)
     {
@@ -421,7 +429,7 @@ BOOLEAN LookupCountryCodeFromMmdb(
         ipv4SockAddr.sin_addr = RemoteAddress.InAddr;
 
         mmdb_result = MMDB_lookup_sockaddr(
-            &GeoDbCountry,
+            &GeoDbInstance,
             (struct sockaddr*)&ipv4SockAddr,
             &mmdb_error
             );
@@ -448,7 +456,7 @@ BOOLEAN LookupCountryCodeFromMmdb(
         ipv6SockAddr.sin6_addr = RemoteAddress.In6Addr;
 
         mmdb_result = MMDB_lookup_sockaddr(
-            &GeoDbCountry,
+            &GeoDbInstance,
             (struct sockaddr*)&ipv6SockAddr,
             &mmdb_error
             );

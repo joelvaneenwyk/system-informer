@@ -248,7 +248,8 @@ typedef struct _MEMORY_IMAGE_INFORMATION
             ULONG ImagePartialMap : 1;
             ULONG ImageNotExecutable : 1;
             ULONG ImageSigningLevel : 4; // REDSTONE3
-            ULONG Reserved : 26;
+            ULONG ImageExtensionPresent : 1; // since 24H2
+            ULONG Reserved : 25;
         };
     };
 } MEMORY_IMAGE_INFORMATION, *PMEMORY_IMAGE_INFORMATION;
@@ -500,7 +501,9 @@ typedef struct _SECTION_INTERNAL_IMAGE_INFORMATION
             ULONG ImageCetDynamicApisAllowInProc : 1;
             ULONG ImageCetDowngradeReserved1 : 1;
             ULONG ImageCetDowngradeReserved2 : 1;
-            ULONG Reserved : 24;
+            ULONG ImageExportSuppressionInfoPresent : 1;
+            ULONG ImageCfgEnabled : 1;
+            ULONG Reserved : 22;
         };
     };
 } SECTION_INTERNAL_IMAGE_INFORMATION, *PSECTION_INTERNAL_IMAGE_INFORMATION;
@@ -647,7 +650,7 @@ NtFlushVirtualMemory(
 #if (PHNT_MODE != PHNT_MODE_KERNEL)
 typedef enum _VIRTUAL_MEMORY_INFORMATION_CLASS
 {
-    VmPrefetchInformation, // ULONG
+    VmPrefetchInformation, // MEMORY_PREFETCH_INFORMATION
     VmPagePriorityInformation, // OFFER_PRIORITY
     VmCfgCallTargetInformation, // CFG_CALL_TARGET_LIST_INFORMATION // REDSTONE2
     VmPageDirtyStateInformation, // REDSTONE3
@@ -675,6 +678,13 @@ typedef struct _MEMORY_RANGE_ENTRY
     PVOID VirtualAddress;
     SIZE_T NumberOfBytes;
 } MEMORY_RANGE_ENTRY, *PMEMORY_RANGE_ENTRY;
+
+#define VM_PREFETCH_TO_WORKING_SET 0x1 // since 24H4
+
+typedef struct _MEMORY_PREFETCH_INFORMATION
+{
+    ULONG Flags;
+} MEMORY_PREFETCH_INFORMATION, *PMEMORY_PREFETCH_INFORMATION;
 
 typedef struct _CFG_CALL_TARGET_LIST_INFORMATION
 {
@@ -801,7 +811,7 @@ NtMapViewOfSectionEx(
     _Inout_opt_ PLARGE_INTEGER SectionOffset,
     _Inout_ PSIZE_T ViewSize,
     _In_ ULONG AllocationType,
-    _In_ ULONG Win32Protect,
+    _In_ ULONG PageProtection,
     _Inout_updates_opt_(ExtendedParameterCount) PMEM_EXTENDED_PARAMETER ExtendedParameters,
     _In_ ULONG ExtendedParameterCount
     );
@@ -883,6 +893,7 @@ typedef enum _PARTITION_INFORMATION_CLASS
     SystemMemoryPartitionMemoryChargeAttributes,
     SystemMemoryPartitionClearAttributes,
     SystemMemoryPartitionSetMemoryThresholds, // since WIN11
+    SystemMemoryPartitionMemoryListCommand, // since 24H2
     SystemMemoryPartitionMax
 } PARTITION_INFORMATION_CLASS, *PPARTITION_INFORMATION_CLASS;
 #else
@@ -900,7 +911,8 @@ typedef enum _PARTITION_INFORMATION_CLASS
 #define SystemMemoryPartitionMemoryChargeAttributes 0xB
 #define SystemMemoryPartitionClearAttributes 0xC
 #define SystemMemoryPartitionSetMemoryThresholds 0xD
-#define SystemMemoryPartitionMax 0xE
+#define SystemMemoryPartitionMemoryListCommand 0xE
+#define SystemMemoryPartitionMax 0xF
 #endif
 
 // private

@@ -26,11 +26,12 @@
 
 // dyndata
 
-#define KPH_TAG_DYNDATA                         '0DpK'
+#define KPH_TAG_DYNDATA                         '0YpK'
 
 // object
 
 #define KPH_TAG_OBJECT_QUERY                    '0OpK'
+#define KPH_TAG_OBJECT_INFO                     '1OpK'
 
 // process
 
@@ -122,7 +123,7 @@
 
 #define KPH_TAG_BACK_TRACE_OBJECT               '0BpK'
 
-// kphtoken
+// session_token
 
 #define KPH_TAG_SESSION_TOKEN_OBJECT            '0tpK'
 #define KPH_TAG_SESSION_TOKEN_SIGNATURE         '1tpK'
