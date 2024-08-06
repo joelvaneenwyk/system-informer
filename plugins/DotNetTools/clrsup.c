@@ -6,7 +6,7 @@
  * Authors:
  *
  *     wj32    2011-2015
- *     dmex    2011-2023
+ *     dmex    2011-2024
  *
  */
 
@@ -1192,6 +1192,19 @@ static VOID DnCleanupDacAuxiliaryProvider(
     PhClearReference(&dataTarget->DaccorePath);
 }
 
+static BOOLEAN DnClrVerifyFileIsChainedToMicrosoft(
+    _In_ PPH_STRINGREF FileName,
+    _In_ BOOLEAN NativeFileName
+    )
+{
+    if (PhGetIntegerSetting(SETTING_NAME_DOT_NET_VERIFYSIGNATURE))
+    {
+        return PhVerifyFileIsChainedToMicrosoft(FileName, NativeFileName);
+    }
+
+    return TRUE;
+}
+
 static BOOLEAN DnpMscordaccoreDirectoryCallback(
     _In_ HANDLE RootDirectory,
     _In_ PFILE_DIRECTORY_INFORMATION Information,
@@ -1287,28 +1300,45 @@ PVOID DnLoadMscordaccore(
     {
         PPH_STRING directoryName = directoryList->Items[i];
         PPH_STRING fileName;
+        PPH_STRING nativeName;
 
-        fileName = PhConcatStringRef3(
+        fileName = PhConcatStringRef4(
+            &PhWin32ExtendedPathPrefix,
             &directoryPath->sr,
             &directoryName->sr,
             &mscordaccoreName
             );
 
-        if (PhDoesFileExistWin32(PhGetString(fileName)))
+        nativeName = PhDosPathNameToNtPathName(&fileName->sr);
+
+        if (!PhIsNullOrEmptyString(nativeName) && PhDoesFileExist(&nativeName->sr))
         {
             PH_MAPPED_IMAGE mappedImage;
+            ULONG timeDateStamp = ULONG_MAX;
+            ULONG sizeOfImage = ULONG_MAX;
 
-            if (NT_SUCCESS(PhLoadMappedImage(PhGetString(fileName), NULL, &mappedImage)))
+            if (NT_SUCCESS(PhLoadMappedImageHeaderPageSize(&nativeName->sr, NULL, &mappedImage)))
             {
-                if (
-                    dataTargetTimeStamp == mappedImage.NtHeaders->FileHeader.TimeDateStamp &&
-                    dataTargetSizeOfImage == mappedImage.NtHeaders->OptionalHeader.SizeOfImage
-                    )
+                if (mappedImage.Magic == IMAGE_NT_OPTIONAL_HDR32_MAGIC)
                 {
-                    mscordacBaseAddress = PhLoadLibrary(PhGetString(fileName));
+                    timeDateStamp = mappedImage.NtHeaders32->FileHeader.TimeDateStamp;
+                    sizeOfImage = mappedImage.NtHeaders32->OptionalHeader.SizeOfImage;
+                }
+                else if (mappedImage.Magic == IMAGE_NT_OPTIONAL_HDR64_MAGIC)
+                {
+                    timeDateStamp = mappedImage.NtHeaders->FileHeader.TimeDateStamp;
+                    sizeOfImage = mappedImage.NtHeaders->OptionalHeader.SizeOfImage;
                 }
 
                 PhUnloadMappedImage(&mappedImage);
+            }
+
+            if (
+                dataTargetTimeStamp == timeDateStamp &&
+                dataTargetSizeOfImage == sizeOfImage
+                )
+            {
+                mscordacBaseAddress = PhLoadLibrary(PhGetString(fileName));
             }
         }
 
@@ -1326,7 +1356,7 @@ TryAppLocal:
     if (!mscordacBaseAddress && dataTargetDirectory)
     {
         PPH_STRING fileName;
-
+ 
         // We couldn't find any compatible versions of the CLR installed. Try loading
         // the version of the CLR included with the application after checking the
         // digital signature was from Microsoft. (dmex)
@@ -1338,7 +1368,7 @@ TryAppLocal:
 
         PhMoveReference(&fileName, PhGetFileName(fileName));
 
-        if (PhVerifyFileIsChainedToMicrosoft(&fileName->sr, FALSE))
+        if (DnClrVerifyFileIsChainedToMicrosoft(&fileName->sr, FALSE))
         {
             HANDLE processHandle;
             HANDLE tokenHandle = NULL;
@@ -1440,7 +1470,7 @@ TryAppLocal:
 
                 if (NT_SUCCESS(status))
                 {
-                    if (PhVerifyFileIsChainedToMicrosoft(&fileName->sr, FALSE))
+                    if (DnClrVerifyFileIsChainedToMicrosoft(&fileName->sr, FALSE))
                     {
                         mscordacBaseAddress = PhLoadLibrary(PhGetString(fileName));
                     }

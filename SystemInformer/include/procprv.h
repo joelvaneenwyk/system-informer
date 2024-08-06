@@ -86,6 +86,8 @@ extern PH_UINT64_DELTA PhIoReadDelta;
 extern PH_UINT64_DELTA PhIoWriteDelta;
 extern PH_UINT64_DELTA PhIoOtherDelta;
 
+extern BOOLEAN PhProcessStatisticsInitialized;
+
 extern PH_CIRCULAR_BUFFER_FLOAT PhCpuKernelHistory;
 extern PH_CIRCULAR_BUFFER_FLOAT PhCpuUserHistory;
 //extern PH_CIRCULAR_BUFFER_FLOAT PhCpuOtherHistory;
@@ -227,6 +229,7 @@ typedef struct _PH_PROCESS_ITEM
     PH_QUEUED_LOCK ServiceListLock;
 
     WCHAR ProcessIdString[PH_INT32_STR_LEN_1];
+    WCHAR ProcessIdHexString[PH_PTR_STR_LEN_1];
     //WCHAR ParentProcessIdString[PH_INT32_STR_LEN_1];
     //WCHAR SessionIdString[PH_INT32_STR_LEN_1];
     WCHAR LxssProcessIdString[PH_INT32_STR_LEN_1];
@@ -280,6 +283,7 @@ typedef struct _PH_PROCESS_ITEM
     PPH_STRING UserName;
 
     PROCESS_DISK_COUNTERS DiskCounters;
+    PROCESS_NETWORK_COUNTERS NetworkCounters;
     ULONGLONG ContextSwitches;
 
     ULONGLONG ProcessSequenceNumber;

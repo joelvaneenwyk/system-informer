@@ -67,6 +67,7 @@ vcpkg.applocal.log
 ipch/
 .vs/
 x64/
+*/packages/
 
 # Visual Studio profiler
 *.psess

@@ -111,13 +111,10 @@ PPH_STRING PhGetProcessItemImageTypeText(
 #endif
     }
 
-    if (architecture == IMAGE_FILE_MACHINE_UNKNOWN)
-        PhGetProcessArchitecture(ProcessItem->QueryHandle, &architecture);
-
     switch (architecture)
     {
     case IMAGE_FILE_MACHINE_I386:
-        arch = L"I386 ";
+        arch = L"i386 ";
         break;
     case IMAGE_FILE_MACHINE_AMD64:
         arch = chpeVersion ? L"AMD64 (ARM64X) " : L"AMD64 ";
@@ -333,10 +330,13 @@ INT_PTR CALLBACK PhpProcessGeneralDlgProc(
 
             if (processItem->QueryHandle)
             {
-                PhGetProcessImageFileNameWin32(processItem->QueryHandle, &fileNameWin32);
-                PH_AUTO(fileNameWin32);
+                if (NT_SUCCESS(PhGetProcessImageFileNameWin32(processItem->QueryHandle, &fileNameWin32)))
+                {
+                    PH_AUTO(fileNameWin32);
+                }
             }
-            else
+
+            if (PhIsNullOrEmptyString(fileNameWin32))
             {
                 fileNameWin32 = processItem->FileName ? PhGetFileName(processItem->FileName) : NULL;
                 PH_AUTO(fileNameWin32);

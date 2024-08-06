@@ -13,7 +13,8 @@ namespace CustomBuildTool
 {
     public static class BuildConfig
     {
-        public static readonly SortedDictionary<string, int> Build_Channels = new SortedDictionary<string, int>()
+        // N.B. Order is important, SortedDictionary is used on purpose.
+        public static readonly SortedDictionary<string, int> Build_Channels = new SortedDictionary<string, int>(StringComparer.OrdinalIgnoreCase)
         {
             { "release",   0 }, // PhReleaseChannel
             //{ "preview",   1 }, // PhPreviewChannel
@@ -21,7 +22,7 @@ namespace CustomBuildTool
             //{ "developer", 3 }, // PhDeveloperChannel
         };
 
-        public static readonly BuildFile[] Build_Release_Files =
+        public static readonly ImmutableArray<BuildFile> Build_Release_Files =
         [
             new BuildFile("\\systeminformer-build-release-setup.exe", true),
             new BuildFile("\\systeminformer-build-release-bin.zip", true),
@@ -37,7 +38,7 @@ namespace CustomBuildTool
             //new BuildFile("\\systeminformer-build-checksums.txt", false),
         ];
 
-        public static readonly string[] Build_Sdk_Directories =
+        public static readonly ImmutableArray<string> Build_Sdk_Directories =
         [
             "sdk",
             "sdk\\include",
@@ -51,10 +52,9 @@ namespace CustomBuildTool
             //"sdk\\samples\\SamplePlugin\\bin\\Release32"
         ];
 
-        public static readonly string[] Build_Phnt_Headers =
+        public static readonly ImmutableArray<string> Build_Phnt_Headers =
         [
             "ntbcd.h",
-            "ntd3dkmt.h",
             "ntdbg.h",
             "ntexapi.h",
             "ntgdi.h",
@@ -79,6 +79,7 @@ namespace CustomBuildTool
             "ntsxs.h",
             "nttmapi.h",
             "nttp.h",
+            "ntwmi.h",
             "ntwow64.h",
             "ntxcapi.h",
             "ntzwapi.h",
@@ -89,7 +90,7 @@ namespace CustomBuildTool
             "winsta.h"
         ];
 
-        public static readonly string[] Build_Phlib_Headers =
+        public static readonly ImmutableArray<string> Build_Phlib_Headers =
         [
             "appresolver.h",
             "circbuf.h",
@@ -135,11 +136,11 @@ namespace CustomBuildTool
             "workqueue.h"
         ];
 
-        public static readonly string[] Build_Kphlib_Headers =
+        public static readonly ImmutableArray<string> Build_Kphlib_Headers =
         [
             "kphapi.h",
             "kphmsg.h",
-            "kphmsgdefs.h",
+            "kphmsgdefs.h"
         ];
     }
 
@@ -148,7 +149,6 @@ namespace CustomBuildTool
         public readonly string FileName;
         public readonly bool UploadCanary;
 
-        [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0290:Use primary constructor", Justification = "<Pending>")]
         public BuildFile(string Filename, bool UploadCanary)
         {
             this.FileName = Filename;
@@ -158,6 +158,11 @@ namespace CustomBuildTool
         public override string ToString()
         {
             return this.FileName;
+        }
+
+        public override int GetHashCode()
+        {
+            return this.FileName.GetHashCode();
         }
     }
 }

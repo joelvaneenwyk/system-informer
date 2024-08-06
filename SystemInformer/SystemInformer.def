@@ -63,7 +63,6 @@ EXPORTS
     PhAppendCharStringBuilder2
     PhAppendFormatStringBuilder
     PhAppendFormatStringBuilder_V
-    PhAppendStringBuilder
     PhAppendStringBuilderEx
     PhBufferToHexString
     PhBufferToHexStringEx
@@ -74,6 +73,7 @@ EXPORTS
     PhCompareStringZNatural
     PhConcatStringRef2
     PhConcatStringRef3
+    PhConcatStringRef4
     PhConcatStrings
     PhConcatStrings_V
     PhConcatStrings2
@@ -163,6 +163,7 @@ EXPORTS
     PhfWaitForBarrier
     PhfWaitForEvent
     PhfWaitForRundownProtection
+    PhGetLastError
     PhGetPrimeNumber
     PhHashBytes
     PhHashStringRef
@@ -239,6 +240,7 @@ EXPORTS
     PhAdjustPrivilege
     PhCreateDirectoryWin32
     PhCreateDirectoryFullPathWin32
+    PhCreateEvent
     PhCreateFile
     PhCreateFileWin32
     PhCreateFileWin32Ex
@@ -331,6 +333,7 @@ EXPORTS
     PhOpenThreadProcess
     PhOpenProcessToken
     PhPeekNamedPipe
+    PhQueryEnvironmentVariable
     PhQueryFullAttributesFileWin32
     PhQueryKey
     PhQueryValueKey
@@ -382,6 +385,7 @@ EXPORTS
     PhEscapeCommandLinePart
     PhEscapeStringForMenuPrefix
     PhExpandEnvironmentStrings
+    PhFileReadAllTextWin32
     PhFinalHash
     PhFormatDate
     PhFormatDateTime
@@ -465,7 +469,9 @@ EXPORTS
     PhShowFileDialog
     PhShowMessage
     PhShowMessage2
+    PhShowMessageOneTime
     PhShowStatus
+    PhSystemTimeToTzSpecificLocalTime
     PhStringToGuid
     PhSystemTimeToLargeInteger
     PhTaskbarListCreate
@@ -691,7 +697,6 @@ EXPORTS
     PhSaveListViewSortColumnsToSetting
     PhSaveListViewGroupStatesToSetting
     PhSaveWindowPlacementToSetting
-    PhSettingsInitialization
     PhSetIntegerStringRefSetting
     PhSetIntegerPairStringRefSetting
     PhSetScalableIntegerPairStringRefSetting
@@ -734,6 +739,8 @@ EXPORTS
     PhQueryServiceConfig2
     PhQueryServiceStatus
     PhQueryServiceVariableSize
+    PhStartService
+    PhStopService
 
 ; symprv
     PhCreateSymbolProvider
@@ -844,6 +851,6 @@ EXPORTS
     PhDnsFree
 
 ; kphuser
-    KphLevel
-    KphEnumerateProcessHandles2
-    KphQueryHashInformationFile
+    KsiLevel
+    KsiEnumerateProcessHandles
+    KsiQueryHashInformationFile

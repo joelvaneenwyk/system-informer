@@ -209,6 +209,7 @@ typedef struct _PH_PROCESS_NODE
 #ifdef _ARM64_
     ULONG ImageCHPEVersion;
 #endif
+    USHORT Architecture;
 
     // App ID
     PPH_STRING AppIdText;
@@ -280,7 +281,6 @@ typedef struct _PH_PROCESS_NODE
     PPH_STRING JobObjectIdText;
     PPH_STRING ProtectionText;
     PPH_STRING DesktopInfoText;
-    PPH_STRING PidHexText;
     PPH_STRING CpuCoreUsageText;
     PPH_STRING ImageCoherencyText;
     PPH_STRING ImageCoherencyStatusText;
