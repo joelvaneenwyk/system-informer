@@ -1,36 +1,81 @@
 @echo off
-@setlocal enableextensions
-@cd /d "%~dp0\..\"
+goto:$Main
 
-for /f "usebackq tokens=*" %%a in (`call "%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -prerelease -products * -requires Microsoft.Component.MSBuild -property installationPath`) do (
-   set "VSINSTALLPATH=%%a"
+:Command
+setlocal EnableDelayedExpansion
+    set "_command=%*"
+    set "_command=!_command:      = !"
+    set "_command=!_command:    = !"
+    set "_command=!_command:   = !"
+    set "_command=!_command:  = !"
+    if "%GITHUB_ACTIONS%"=="" (
+        echo ##[cmd] !_command!
+    ) else (
+        echo [command]!_command!
+    )
+    call !_command!
+endlocal & (
+    set "SYSTEM_INFORMER_ERROR_LEVEL=%ERRORLEVEL%"
+    set "SYSTEM_INFORMER_LAST_COMMAND=%_command%"
 )
+exit /b %SYSTEM_INFORMER_ERROR_LEVEL%
 
-if not defined VSINSTALLPATH (
-   echo No Visual Studio installation detected.
-   goto end
-)
+:TryRemoveDirectory
+    if not exist "%~1" goto:$TryRemoveDirectoryEnd
+    call :Command rmdir /S /Q "%~1"
+    if exist "%~1" goto:$TryRemoveDirectoryEnd
+    echo Removed directory: '%~1'
+    :$TryRemoveDirectoryEnd
+exit /b 0
 
+:TryRemoveIntermediateFiles
+    call :TryRemoveDirectory "tools\CustomBuildTool\bin\Release\net8.0-x64"
+    call :TryRemoveDirectory "tools\CustomBuildTool\bin\Release\net8.0-windows-x64"
+    call :TryRemoveDirectory "tools\CustomBuildTool\bin\Release\net8.0-windows10.0.22621.0-x64"
+    call :TryRemoveDirectory "tools\CustomBuildTool\bin\Release\net7.0-x64"
+    call :TryRemoveDirectory "tools\CustomBuildTool\bin\Debug"
+    call :TryRemoveDirectory "tools\CustomBuildTool\bin\x64"
+    call :TryRemoveDirectory "tools\CustomBuildTool\obj"
+exit /b 0
 
-:: Pre-cleanup (required since dotnet doesn't cleanup)
-if exist "tools\CustomBuildTool\bin\Release" (
-   rmdir /S /Q "tools\CustomBuildTool\bin\Release"
-)
-if exist "tools\CustomBuildTool\bin\" (
-   rmdir /S /Q "tools\CustomBuildTool\bin\"
-)
-if exist "tools\CustomBuildTool\obj" (
-   rmdir /S /Q "tools\CustomBuildTool\obj"
-)
+:$Main
+setlocal EnableExtensions
+    set "ROOT_DIR=%~dp0\..\"
+    cd /d "%ROOT_DIR%"
 
-if exist "%VSINSTALLPATH%\VC\Auxiliary\Build\vcvarsall.bat" (
-   call "%VSINSTALLPATH%\VC\Auxiliary\Build\vcvarsall.bat" amd64
-   dotnet publish tools\CustomBuildTool\CustomBuildTool.sln -c Release /p:PublishProfile=Properties\PublishProfiles\amd64.pubxml /p:ContinuousIntegrationBuild=true
-   call "%VSINSTALLPATH%\VC\Auxiliary\Build\vcvarsall.bat" arm64
-   dotnet publish tools\CustomBuildTool\CustomBuildTool.sln -c Release /p:PublishProfile=Properties\PublishProfiles\arm64.pubxml /p:ContinuousIntegrationBuild=true
-) else (
-   goto end
-)
+    for /f "usebackq tokens=*" %%a in (`call "%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -nologo -latest -prerelease -products * -requires Microsoft.Component.MSBuild -property installationPath`) do (
+       set "VSINSTALLPATH=%%a"
+    )
 
-:end
-pause
+    if not defined VSINSTALLPATH (
+       echo No Visual Studio installation detected.
+       goto:$MainError
+    )
+
+    if exist "%VSINSTALLPATH%\VC\Auxiliary\Build\vcvarsall.bat" (
+       call "%VSINSTALLPATH%\VC\Auxiliary\Build\vcvarsall.bat" amd64
+    ) else (
+       goto:$MainError
+    )
+
+    :: Pre-cleanup (required since dotnet doesn't cleanup)
+    call :TryRemoveIntermediateFiles
+
+    call :Command dotnet publish "%~dp0..\tools\CustomBuildTool\CustomBuildTool.sln" ^
+        -c Release ^
+        /p:PublishProfile="%~dp0..\tools\CustomBuildTool\Properties\PublishProfiles\64bit.pubxml" ^
+        /p:ContinuousIntegrationBuild=true
+    if errorlevel 1 goto:$MainError
+    goto:$MainEnd
+
+    :$MainError
+        echo [ERROR] Build failed for 'CustomBuildTool' project.
+        if not "%SYSTEM_INFORMER_CI%"=="1" pause
+        goto:$MainEnd
+
+    :$MainEnd
+endlocal & (
+    set "SYSTEM_INFORMER_ERROR_LEVEL=%SYSTEM_INFORMER_ERROR_LEVEL%"
+    set "SYSTEM_INFORMER_LAST_COMMAND=%SYSTEM_INFORMER_LAST_COMMAND%"
+)
+exit /b %SYSTEM_INFORMER_ERROR_LEVEL%

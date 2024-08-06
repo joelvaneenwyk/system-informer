@@ -306,7 +306,7 @@ namespace CustomBuildTool
 
         public static string GetWindowsSdkIncludePath()
         {
-            List<KeyValuePair<Version, string>> versionList = new List<KeyValuePair<Version, string>>();
+            List<KeyValuePair<Version, string>> versionList = [];
             string kitsRoot = Win32.GetKeyValue(true, "Software\\Microsoft\\Windows Kits\\Installed Roots", "KitsRoot10", "%ProgramFiles(x86)%\\Windows Kits\\10\\");
             string kitsPath = Utils.ExpandFullPath(Path.Join([kitsRoot, "\\Include"]));
 
@@ -328,7 +328,7 @@ namespace CustomBuildTool
 
                 if (versionList.Count > 0)
                 {
-                    var result = versionList[versionList.Count - 1];
+                    var result = versionList[^1];
 
                     if (!string.IsNullOrWhiteSpace(result.Value))
                     {
@@ -342,7 +342,7 @@ namespace CustomBuildTool
 
         public static string GetWindowsSdkPath()
         {
-            List<KeyValuePair<Version, string>> versionList = new List<KeyValuePair<Version, string>>();
+            List<KeyValuePair<Version, string>> versionList = [];
             string kitsRoot = Win32.GetKeyValue(true, "Software\\Microsoft\\Windows Kits\\Installed Roots", "KitsRoot10", "%ProgramFiles(x86)%\\Windows Kits\\10\\");
             string kitsPath = Utils.ExpandFullPath(Path.Join([kitsRoot, "\\bin"]));
 
@@ -378,7 +378,7 @@ namespace CustomBuildTool
 
         public static string GetWindowsSdkVersion()
         {
-            List<KeyValuePair<Version, string>> versionList = new List<KeyValuePair<Version, string>>();
+            List<string> versions = [];
             string kitsRoot = Win32.GetKeyValue(true, "Software\\Microsoft\\Windows Kits\\Installed Roots", "KitsRoot10", "%ProgramFiles(x86)%\\Windows Kits\\10\\");
             string kitsPath = Utils.ExpandFullPath(Path.Join([kitsRoot, "\\bin"]));
 

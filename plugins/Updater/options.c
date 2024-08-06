@@ -234,7 +234,7 @@ PPH_LIST PhpUpdaterQueryCommitHistory(
     if (!PhHttpSocketBeginRequest(
         httpContext,
         NULL,
-        L"/repos/winsiderss/systeminformer/commits",
+        L"/repos/joelvaneenwyk/system-informer/commits",
         PH_HTTP_FLAG_REFRESH | PH_HTTP_FLAG_SECURE
         ))
     {
@@ -638,7 +638,7 @@ INT_PTR CALLBACK TextDlgProc(
                         if (entry = PhGetSelectedListViewItemParam(context->ListViewHandle))
                         {
                             if (commitHashUrl = PhConcatStrings2(
-                                L"https://github.com/winsiderss/systeminformer/commit/",
+                                L"https://github.com/joelvaneenwyk/system-informer/commit/",
                                 PhGetString(entry->CommitHashString)
                                 ))
                             {
@@ -814,7 +814,7 @@ INT_PTR CALLBACK TextDlgProc(
                                         if (PhGetListViewItemParam(context->ListViewHandle, lvItemIndex, &entry))
                                         {
                                             if (commitHashUrl = PhConcatStrings2(
-                                                L"https://github.com/winsiderss/systeminformer/commit/",
+                                                L"https://github.com/joelvaneenwyk/system-informer/commit/",
                                                 PhGetString(entry->CommitHashString)
                                                 ))
                                             {
